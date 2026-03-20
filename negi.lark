@@ -1,0 +1,40 @@
+//python interpreter is ditched, this file is purely for demostrational purposes 
+%import common.NUMBER
+%import common.ESCAPED_STRING 
+%import common.CNAME
+
+//whitespace handling
+%ignore /\s+/
+
+?start: sequence
+
+// Statements are sequences
+?sequence: (product ";")* [creturn]
+?creturn: product
+
+// Product: tuple or single term
+?product: tuple | negotiation
+
+// Tuple: explicit product construction
+tuple: negotiation ("," negotiation)+ [","] | negotiation ","
+
+// Negotiation: explicit call. 2 terms without separation shouldn't be anything else.
+//NegI always parses calls with 1 term in front of it, making ((f :) 2) possible.
+//But due to how LALR(1) parses `term term` as (term (term term)),
+//I have to combine that on python side as ((term term) term)
+//if user needs multiple stuff packed and in different order, we already have tuples for this
+?negotiation: term+ // the parser would add negotiation node, if there are more than 1 element
+
+// Terms: atomic values, contracts, or applications
+?term: atomic | membrane
+
+// Atomic leaf nodes
+?atomic: NUMBER | ESCAPED_STRING | label
+label: CNAME | SNAME
+SNAME: /[+\-*\/%=<>!&|^~:@#\.]+/
+
+// Contracts, part of grammar, because user can't change them without breaking parsing
+membrane: isolated | dynamic | grounded
+isolated: "(" [sequence] ")"
+dynamic: "{" [sequence] "}"
+grounded: "[" [sequence] "]"
