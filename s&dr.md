@@ -1,5 +1,5 @@
 # The ENIGMA Specification & Design Rationale
-**Version:** 0.0.2 (Pre-Release)
+**Version:** 0.0.3 (Pre-Release)
 **Authors:** Z_Z (MegadronA03)
 **Status:** Draft
 
@@ -111,6 +111,8 @@ The memory manager. It implements a **Tree-based Scope Model** using a linear st
 
 **Rationale**: Why not a standard stack?
 > A standard stack implies linear execution. ENIGMA needs to support branching context (grounding) and sandboxing (isolation) natively. KES allows the execution to "jump" back to an ancestor context or cut off access to it, enabling structural safety.
+In most languages, you can't control your scope - it's just 'where you are'. In ENIGMA, scopes are called Layers. You can isolate them (sandbox), save them (persist), or rewire them (metaprogramming). 
+This means you can safely run untrusted code inside your program without crashes, or rewrite how if/else works at runtime, because the language itself is just data structures you can manipulate." 
 
 ---
 
