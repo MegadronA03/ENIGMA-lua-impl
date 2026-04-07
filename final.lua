@@ -1,4 +1,3 @@
-```lua
 --TODOs:
 -- 1. Make Negi parser manifest and move existing parser code there. Currently it's nodes are all disconnected and just exist in main context, which just looks like some kid didn't put back toys inside a box.
 -- 2. Tuple load and Tuple context. This is the last major issue that keep me from testing phase.
@@ -1342,4 +1341,3 @@ Structure : Manifest = [
     ]
 ];
 ]]
-```
