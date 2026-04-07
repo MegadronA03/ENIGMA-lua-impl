@@ -79,7 +79,7 @@ The scope is strictly **"Common Grounds for Host Operation."** FINAL does not de
 
 ## 1.2 What this is
 
-FINAL  Framework for Intent Negotiation and Authority Logic (or Final Is Not A Language) is not a language in the traditional sense; it is a **semantic substrate**. It is designed to solve the "Ship of Theseus" problem in software: allowing a system to replace its components, semantics, and even its underlying runtime without losing its identity.
+FINAL - Framework for Intent Negotiation and Authority Logic (or Final Is Not A Language) is not a language in the traditional sense; it is a **semantic substrate**. It is designed to solve the "Ship of Theseus" problem in software: allowing a system to replace its components, semantics, and even its underlying runtime without losing its identity.
 
 ### 1.2.1 Core Philosophy
 *   **Everything is a Negotiation**: There are no "function calls," only negotiations between Manifests.
