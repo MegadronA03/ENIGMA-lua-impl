@@ -13,7 +13,7 @@ FINAL - Framework for Intent Negotiation and Authority Logic (or Final Is Not A 
 ## Running/Building
 The `final.lua` is a 1 file library for Lua 5.5. You can either load it via `require` or just copy/paste the code. It only depends on lua core libraries, and even those can be removed.
 
-# Roadmap to 0.0.1 (working PoC version)
+# 0.0.1 roadmap (working PoC version)
 1. Make Negi parser manifest and move existing parser code there. Currently it's nodes are all disconnected and just exist in main context, which just looks like some kid didn't put back toys inside a box.
 2. Tuple load and Tuple context. This is the last major issue that keep me from testing phase.
     - Tuple keep mutations only if passed explicitly after pop_layer. The main difficulty of this is sometimes Tuple keeps mutations and sometimes don't?
