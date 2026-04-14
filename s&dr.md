@@ -1,5 +1,5 @@
 # The FINAL Specification & Design Rationale
-**Version:** 0.0.5 (Pre-Release)
+**Version:** 0.0.6 (Pre-Release)
 **Authors:** Z_Z (MegadronA03)
 **Status:** Draft
 
@@ -162,11 +162,11 @@ These are the building blocks provided by the `FLESH` environment.
 *   **Behavior**: A Sequence pushes a new Layer. Upon completion, the Layer is popped (destroyed). It does **not** automatically capture variables (closure).
 *   **Rationale**: This forces explicit data flow. You cannot rely on implicit variable capture. This makes data dependencies strictly visible.
 
-### 5.4 `Tuple`
+### 5.4 `Frame`
 **[FLUID]**
 *   **Role**: Data container / Environment carrier.
-*   **Behavior**: Unlike a Sequence, a Tuple is a "snapshotted" collection of references.
-*   **Rationale**: If Sequence is the Verb (Action), Tuple is the Noun (Data). It is the mechanism for explicitly transferring state between isolated contexts.
+*   **Behavior**: Unlike a Sequence, a Frame is a "snapshotted" collection of references.
+*   **Rationale**: If Sequence is the Verb (Action), Frame is the Noun (Data). It is the mechanism for explicitly transferring state between isolated contexts.
 
 ### 5.5 `Membrane`
 **[STABLE]**
@@ -201,7 +201,7 @@ These are the building blocks provided by the `FLESH` environment.
 ### 5.7 `Mold` & `Structure`
 **[THEORETICAL]**
 *   **Role**: Specification and instantiation of safe, contained context.
-*   **Mold**: A blueprint defining expected Manifests and their capabilities within Tuple.
+*   **Mold**: A blueprint defining expected Manifests and their capabilities within Frame.
 *   **Contract**: An instance of a Mold binding a specific labels, protocols and order.
 
 ---
@@ -234,38 +234,38 @@ In the syntax `A B`, `A` negotiates with `B`.
 
 ## 8. Code examples
 
-1. Sequence behaivours
+1. Sequence behaivours (NOTE: all effects that happened inside Sequence are destroyed after Sequence finishes. Effects can only pass outside only through either return (aka "pass" in case of FINAL))
 ```negi
 a : 1;
-b : [;a]; // "grounded"
+b : [;a]; // "[] - immediate: membrane does nothing"
 print (b()); // "1"
-{
+[
     a : 55;
     print(b()); // "1"
     print a; // "55"
-}();
+]();
 print a; // "1, Sequence always drops the context no matter the kind"
 a : 34;
 print(b()); // "34"
 
 a : 1;
-b : {;a}; // "dynamic"
+b : {;a}; // "{} - quotation: about to be evaluated construction in this case"
 print (b()); // "1"
-{
+[
     a : 55;
     print(b()); // "55"
     print a; // "55"
-}();
+]();
 print a; // "1"
 
 a : 1;
 b : {;a};
 print (b()); // "1"
-{ // "isolated"
+( // "() - contained: effects inside this layer are only visible for effects originated from this layer"
     a : 55;
-    print(b()); // "1"
+    print(b()); // "1 - quoted Sequence can't know what changed here, because it isn't originated from here"
     print a; // "55"
-}();
+)();
 print a; // "1"
 ```
 
@@ -309,7 +309,7 @@ cli log(binary_search([1, 3, 5, 7, 9], 7)); // "3"
 ## 9. Open Questions & Unknowns
 **[UNKNOWN]** - *This section is specifically for feedback.*
 
-1.  **Closure vs. Grounding**: Currently, Sequences do not capture context automatically. Is this too strict for practical programming? Should there be a syntax sugar for "Capture this Tuple into a Sequence"? This needs practical testing. My opinion on this is that Sequence nevere vapture it's dependencies, there's the Tuple for that.
+1.  **Closure vs. Grounding**: Currently, Sequences do not capture context automatically. Is this too strict for practical programming? Should there be a syntax sugar for "Capture this Frame into a Sequence"? This needs practical testing. My opinion on this is that Sequence nevere vapture it's dependencies, there's the Frame for that.
 2.  **Performance**: It's possible to compile those abstractions with optimizations via library, the problem is that it needs to be designed.
 
 ---

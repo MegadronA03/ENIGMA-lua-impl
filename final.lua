@@ -1,15 +1,15 @@
 --TODOs:
 -- 1. Make Negi parser manifest and move existing parser code there. Currently it's nodes are all disconnected and just exist in main context, which just looks like some kid didn't put back toys inside a box.
--- 2. Tuple load and Tuple context. This is the last major issue that keep me from testing phase.
--- 2.1 Tuple keep mutations only if passed explicitly after pop_layer. The main difficulty of this is sometimes Tuple keeps mutations and sometimes don't?
--- 2.2 Tuple should work simmilarly like KES layers, "store" parent and delta from parent Tuple.
--- 3. Host representation. Lua have quite messy syntax and context, we need to nicely wrap this up inside some Manifest or Tuple.
+-- 2. Frame load and Frame context. This is the last major issue that keep me from testing phase.
+-- 2.1 Frame keep mutations only if passed explicitly after pop_layer. The main difficulty of this is sometimes Frame keeps mutations and sometimes don't?
+-- 2.2 Frame should work simmilarly like KES layers, "store" parent and delta from parent Frame.
+-- 3. Host representation. Lua have quite messy syntax and context, we need to nicely wrap this up inside some Manifest or Frame.
 -- 4. Rework dynamic membrane as delayed behaivour: rework push_layer into always grounded. grounded - immediate, dynamic - verb, isolated - contained.
 -- 5. Add "ask" clause to dispatch
 
 return (function ()
-    --Frontend: NegI - Negotiation Interface (the interface)
-    --Backend: FINAL - Framework for Intent Negotiation and Authority Logic (or Final Is Not A Language) (the substrate)
+    --Frontend: NegI - Negotiation Interface (the interface, what is developed)
+    --Backend: FINAL - Framework for Intent Negotiation and Authority Logic (or Final Is Not A Language) (the substrate, NegI implementation)
 
     -- This works more or less as ship of thesus, FINAL provides common interfaces for other manifests to communicate with each other in platform agnostic way
     local newstate = function () -- something similar to lua_newstate but for FINAL
@@ -156,58 +156,54 @@ return (function ()
                             c[i] = c[i] or self.bindings[i].records[e] end end
                     return c
                 end,
-                binding_label_get = function (self, b) return self.labels.bl[b] end, -- Used by Tuple to make label list.
+                binding_label_get = function (self, b) return self.labels.bl[b] end, -- Used by Frame to make label list.
             },
             dispatch = function (self, lterm, rterm, protocol)
                 if lterm == nil then return end
+                protocol = protocol or lterm.protocol -- protocol argument is optional and here only for convinience, so I don't have to recreate manifest with transformed protocols
                 if protocol then
                     if rterm then
-                        if protocol.can then
+                        if protocol.can then -- both "can" and "ask" may not be fulfilled unlike "can" or "get" or abscense of protocol clauses
                             local label_p = self.KES.bindings[self.KES.bindings.Label.records[self.host_layer]].records[self.host_layer] -- we use direct access, because this stuff will depend on furst record anyways
                             if self.capcheck(label_p, rterm) then return {protocol = protocol.can[rterm.state.name], state = lterm.state} end  -- TODO: we need to check if it's exist
-                        if protocol.ask then
+                        if protocol.ask then -- TODO: ask implementation details
                             local artifact_p = self.KES.bindings[self.KES.bindings.Artifact.records[self.host_layer]].records[self.host_layer]
                             local label_p = self.KES.bindings[self.KES.bindings.Label.records[self.host_layer]].records[self.host_layer]
                             local hanc = self.KES:resolve(protocol.ask)
-                            if self.capcheck(label_p, rterm) then if self.capcheck(artifact_p, hanc) then return hanc.state.artifact(lterm, rterm) 
+                            if self.capcheck(label_p, rterm) then if self.capcheck(artifact_p, hanc) then return hanc.state.artifact(lterm, rterm)
                                 else return self:dispatch(hanc, {
                                     protocol = tuple_p.state,
-                                    state = {items = {lterm, rterm}, labels = {"self", "arg"}}}, hanc.protocol) end end end
-                        if rterm and rterm.protocol and rterm.protocol.get then -- I'm conflicted about this
-                            rterm = self:dispatch(rterm, nil, rterm.protocol) -- get exectuion
-                        end
+                                    state = {items = {lterm, rterm}, labels = {"self", "arg"}}}) end end end
                         if protocol.call then
+                            if rterm.protocol and rterm.protocol.get then rterm = self:dispatch(rterm, nil) end -- 
                             local artifact_p = self.KES.bindings[self.KES.bindings.Artifact.records[self.host_layer]].records[self.host_layer]
-                            local tuple_p = self.KES.bindings[self.KES.bindings.Tuple.records[self.host_layer]].records[self.host_layer]
+                            local tuple_p = self.KES.bindings[self.KES.bindings.Frame.records[self.host_layer]].records[self.host_layer]
                             local hanc = self.KES:resolve(protocol.get)
-                            if self.capcheck(artifact_p, hanc) then
-                                return hanc.state.artifact(lterm, rterm)
-                            else return self:dispatch(hanc, {
-                                protocol = tuple_p.state,
-                                state = {items = {lterm, rterm}, labels = {"self", "arg"}}}, hanc.protocol) end end-- needs some standartization on how this should be passed around, don't like hardcoded "self" and "arg"
-                        if protocol.get then -- fallback to underlying manifest for an answer
+                            return self.capcheck(artifact_p, hanc) and
+                                hanc.state.artifact(lterm, rterm) or
+                                self:dispatch(hanc, {
+                                    protocol = tuple_p.state,
+                                    state = {items = {lterm, rterm}, labels = {"self", "arg"}}}) -- needs some standartization on how this should be passed around, don't like hardcoded "self" and "arg"
+                        elseif protocol.get then -- fallback to underlying manifest for an answer
                             local artifact_p = self.KES.bindings[self.KES.bindings.Artifact.records[self.host_layer]].records[self.host_layer]
-                            local tuple_p = self.KES.bindings[self.KES.bindings.Tuple.records[self.host_layer]].records[self.host_layer]
+                            local tuple_p = self.KES.bindings[self.KES.bindings.Frame.records[self.host_layer]].records[self.host_layer]
                             local unhc = self.KES:resolve(protocol.get)
-                            local fabk
-                            if self.capcheck(artifact_p, unhc) then
-                                fabk = unhc.state.artifact(lterm)
-                            else fabk = self:dispatch(unhc, lterm, unhc.protocol) end
-                            return self:dispatch(fabk, rterm, fabk.protocol)
+                            local fabk = self.capcheck(artifact_p, unhc) and
+                                unhc.state.artifact(lterm) or self:dispatch(unhc, lterm)
+                            return self:dispatch(fabk, rterm)
                         else return {
                             protocol = self.KES.bindings[self.KES.bindings.Error.records[self.host_layer]].records[self.host_layer].state,
-                            state = {desc = "ENIMGA: FLESH:dispatch Error: rterm is outside of lterm protocol response capability"}} end
+                            state = {desc = "FINAL: FLESH:dispatch Error: rterm is outside of lterm protocol response capability"}} end
                     elseif protocol.get then
                             local artifact_p = self.KES.bindings[self.KES.bindings.Artifact.records[self.host_layer]].records[self.host_layer]
                             local unhc = self.KES:resolve(protocol.get)
                             if self.capcheck(artifact_p, unhc) then
                                 return unhc.state.artifact(lterm)
-                            else return self:dispatch(unhc, lterm, unhc.protocol) end
+                            else return self:dispatch(unhc, lterm) end
                         else return lterm end
-                elseif lterm.protocol then return self:dispatch(lterm, rterm, lterm.protocol) 
                 elseif rterm then return {
                     protocol = self.KES.bindings[self.KES.bindings.Error.records[self.host_layer]].records[self.host_layer].state,
-                    state = {desc = "ENIMGA: FLESH:dispatch Error: missing protocol"}}
+                    state = {desc = "FINAL: FLESH:dispatch Error: missing protocol"}}
                 else return lterm end
             end,
             --env methods
@@ -218,7 +214,7 @@ return (function ()
         FLESH.host_layer = 1 -- we already have layer in KES, so no need for push_layer
         for _,e in pairs({
             "Native","Artifact","Error","Protocol","Manifest","gap","Number",
-            "String","Label","Tuple","Sequence","Membrane","Negotiation"
+            "String","Label","Frame","Sequence","Membrane","Negotiation"
         }) do
             FLESH.KES:write_entry(e) -- we can directly write stuff, without explicitly defining binding
         end
@@ -230,7 +226,7 @@ return (function ()
 
         --I need to make things clear
         --Manifest can only store references to stuff inside it's state
-        --meaning if it's related to user modifyable storage, we store KES label or binding (refer to Tuple)
+        --meaning if it's related to user modifyable storage, we store KES label or binding (refer to Frame)
         --if something different getting stored, it's host resources, that user can only interact with it via protocol
         --which means yes, state itself is opaque host resource
 
@@ -263,7 +259,7 @@ return (function ()
             if (a) then a, e = pcall(a) end
             if (e) then
                 local em = {
-                    protocol = "Error", 
+                    protocol = "Error",
                     state = {desc = "Artifact: Failed to load "..chunkname.." due to host error: "..e}}
                 setmetatable(em, plfmt)
                 return em end
@@ -287,7 +283,7 @@ return (function ()
 
         FLESH.capcheck = function(self, arg) -- Even through fallbacks, is manifest implements this protocol?
             -- TODO: check protocol in flat form, we need to make sure clauses are reachable, not that there is inside chain some Manifest that satisfy intent.
-            local fail = function () return arg.protocol.get and FLESH.capcheck(FLESH:dispatch(arg, nil, arg.protocol)) or false end
+            local fail = function () return arg.protocol.get and FLESH.capcheck(FLESH:dispatch(arg, nil)) or false end
             for i,e in pairs(self.state) do
                 if (arg.protocol[i] ~= e) then
                     return fail() end end
@@ -300,7 +296,7 @@ return (function ()
         local capability_check = FLESH.KES:write_entry(a_stubs[1], FLESH.make.Artifact([[return function (self, arg)
             return FLESH.capcheck(self, arg) and FLESH.KES:resolve("true") or FLESH.KES:resolve("false") end]], "capcheck"))
 
-        FLESH.KES:write_entry(a_stubs[2], FLESH.make.Artifact([[return function (self, arg) end]])) -- should make artifact creation off state, table, Tuple and string
+        FLESH.KES:write_entry(a_stubs[2], FLESH.make.Artifact([[return function (self, arg) end]])) -- should make artifact creation off state, table, Frame and string
         FLESH.KES:write_entry(a_stubs[3], FLESH.make.Artifact([[return function (self)
             return FLESH.make.Artifact(self.state.chunk, self.state.chunkname, self.state.mode, self.state.env) end]]))
         FLESH.KES:write_entry(a_stubs[4], FLESH.make.Artifact([[return function(self, arg)
@@ -347,7 +343,7 @@ return (function ()
                         element = {get = p_artifact([[]])}, -- text representation of Token
                         id = {get = nil}, -- it's id (probably will remove it)
                         position = {get = nil}, -- position relative to root Token text representation
-                        content = {get = nil}, -- return Tuple with it's child Tokens (probably won't add this, because I store that in opaque non-uniform states)
+                        content = {get = nil}, -- return Frame with it's child Tokens (probably won't add this, because I store that in opaque non-uniform states)
                     }}
                 },
                 get = p_artifact([[return function (self) return self.state.token end]]), -- fallback to standard token operation
@@ -377,7 +373,7 @@ return (function ()
             end]])
         end
 
-        FLESH.make.Tuple = function (t)
+        FLESH.make.Frame = function (t)
             local s = {labels = {}, items = {}}
             for i,e in pairs(t) do
                 s.items[#s.items+1] = e
@@ -385,7 +381,7 @@ return (function ()
                     s.labels[k] = #s.items
                 end
             end
-            return {protocol = FLESH.KES:resolve("Tuple").state, state = s}
+            return {protocol = FLESH.KES:resolve("Frame").state, state = s}
         end
 
         FLESH.make.Error = function (desc)
@@ -393,7 +389,7 @@ return (function ()
                 protocol = FLESH.KES.bindings[FLESH.KES.bindings.Error.records[FLESH.host_layer] ].records[FLESH.host_layer].state,
                 state = {desc = desc}}end
 
-        local host_protocols = FLESH.make.Tuple({ -- while it's a mapping table, FINAL fundamentally disagree with lua on type existance, so for example userdata can't be capchecked
+        local host_protocols = FLESH.make.Frame({ -- while it's a mapping table, FINAL fundamentally disagree with lua on type existance, so for example userdata can't be capchecked
             ["nil"] = FLESH.KES:write_entry(nil, {protocol = {},state = {}}),
             boolean = FLESH.KES:write_entry(nil, {protocol = {
                     can = {
@@ -606,16 +602,16 @@ return (function ()
                 end
             end end)()
 
-        local host_tuple = FLESH.make.Tuple({
-            meta = FLESH.KES:write_entry(nil, FLESH.make.Tuple({
+        local host_tuple = FLESH.make.Frame({
+            meta = FLESH.KES:write_entry(nil, FLESH.make.Frame({
                 name = FLESH.KES:write_entry(nil, FLESH:import("Lua 5.5")),
                 version = FLESH.KES:write_entry(nil, FLESH:import("0.0.1"))
             })),
-            intrinsics = FLESH.KES:write_entry(nil, FLESH.make.Tuple({
+            intrinsics = FLESH.KES:write_entry(nil, FLESH.make.Frame({
                 types = nil,
                 concepts = nil,
             })),
-            authority = FLESH.KES:write_entry(nil, FLESH.make.Tuple({
+            authority = FLESH.KES:write_entry(nil, FLESH.make.Frame({
                 coroutine = nil,
                 debug = nil,
                 io = nil,
@@ -673,7 +669,7 @@ return (function ()
                     ["in"] = {call = capability_check}, -- capability_check is shared artifact 
                     ["="] = {call = p_artifact([[return function (self, arg) 
                     
-                    --we take Tuple from arg
+                    --we take Frame from arg
                     --make manifest for the KES with actual lua tables
                     --store it inside KES (of course)
                     --add lua metatable so I won't have to chain KES accesses
@@ -720,7 +716,7 @@ return (function ()
                 bindings = {}, -- Array<bind: number, {depend: table|nil, delta: any}>
             }
         ]]
-        FLESH.KES:write_entry("Tuple", {
+        FLESH.KES:write_entry("Frame", {
             protocol = {
                 ["in"] = {call = capability_check},
                 ["="] = {call = p_artifact([[]])}
@@ -769,7 +765,7 @@ return (function ()
                     FLESH.KES:push_layer(self.state.parent, self.state.grounded, self.state.isolated, FLESH.FISH.tail_context or table.create(0, #prods))
                     local pl = {}
                     FISH.pending_labels = pl
-                    local tuple_p = FLESH.KES.bindings[FLESH.KES.bindings.Tuple.records[FLESH.host_layer] ].records[FLESH.host_layer]
+                    local tuple_p = FLESH.KES.bindings[FLESH.KES.bindings.Frame.records[FLESH.host_layer] ].records[FLESH.host_layer]
                     if (FLESH.capcheck(tuple_p, arg)) then FLESH:dispatch(arg,nil,arg.protocol.can.load) end
                     for i,e in pairs(FISH.pending_labels) do FLESH.KES:write_entry() end
                     for i,e in ipairs(prods) do
@@ -777,13 +773,13 @@ return (function ()
                         pl = {}
                         FISH.pending_labels = pl
                         FISH.def_grounded, FISH.def_isolated = false, false
-                        if (s.protocol.get) then s = FLESH:dispatch(s, nil, s.protocol) end
+                        if (s.protocol.get) then s = FLESH:dispatch(s, nil) end
                         for i,e in pairs(pl) do FLESH.KES:write_entry(i, s) end
                     end
                     FISH.pending_labels = {} 
                     local s = FLESH.KES:resolve(self.state.creturn)
                     --FLESH.FISH.tail_context = FLESH.KES.layers[#FLESH.KES.layers]
-                    if (s.protocol.get) then s = FLESH:dispatch(s, nil, s.protocol) end -- no TCO due to inderection
+                    if (s.protocol.get) then s = FLESH:dispatch(s, nil) end -- no TCO due to inderection
                     FLESH.KES:pop_layer()
                     return s
                 end]])
@@ -817,7 +813,7 @@ return (function ()
                                     desc = "Membrane: Invalid kind"
                             }}
                         end end
-                    return FLESH:dispatch(content, nil, content.protocol)
+                    return FLESH:dispatch(content, nil)
                 end]]),
             }
         })
@@ -835,7 +831,7 @@ return (function ()
                     local lt = self.state.lterm
                     local rt = self.state.rterm
                     
-                    return FLESH:dispatch(lt, rt, lt.protocol)
+                    return FLESH:dispatch(lt, rt)
                 end]])
             }
         })
@@ -875,11 +871,11 @@ return (function ()
                         for i,m in ipairs(items) do
                             local pl = {}
                             FISH.pending_labels = pl
-                            proc_items[#proc_items+1] = FLESH:dispatch(m, nil, m.protocol)
+                            proc_items[#proc_items+1] = FLESH:dispatch(m, nil)
                             for k,v in pairs(pl) do
                                 labels[k] = #proc_items end end
                         return {
-                            protocol = FLESH.KES.bindings[FLESH.KES.bindings.Tuple.records[FLESH.host_layer] ].records[FLESH.host_layer].state,
+                            protocol = FLESH.KES.bindings[FLESH.KES.bindings.Frame.records[FLESH.host_layer] ].records[FLESH.host_layer].state,
                             state = {items = proc_items, labels = labels}}
                     end]])},--ref to manifest for running an evaluation (that would be Sequence or Artifact).
                     state = {items = items}} end,
@@ -1230,13 +1226,13 @@ Structure : Manifest = [
     protocol : [
         can : [
             in : [call : Protocol in,],
-            = : [call : Artifact = "",] // "adds Tuple with protocols, turning it into struct"
+            = : [call : Artifact = "",] // "adds Frame with protocols, turning it into struct"
         ],
     ],
     state : [
         can : [
-            in : [call : Artifact = "",], // "checks if passed Tuple content matches it's own protocol template"
-            template : [get : Artifact = "",] // "get the Tuple we checking against"
+            in : [call : Artifact = "",], // "checks if passed Frame content matches it's own protocol template"
+            template : [get : Artifact = "",] // "get the Frame we checking against"
         ],
     ]
 ];
