@@ -5,11 +5,10 @@
 -- 2.2 Frame should work simmilarly like KES layers, "store" parent and delta from parent Frame.
 -- 3. Host representation. Lua have quite messy syntax and context, we need to nicely wrap this up inside some Manifest or Frame.
 -- 4. Rework dynamic membrane as delayed behaivour: rework push_layer into always grounded. grounded - immediate, dynamic - verb, isolated - contained.
--- 5. Add "ask" clause to dispatch
 
 return (function ()
-    --Frontend: NegI - Negotiation Interface (the interface, what is developed)
-    --Backend: FINAL - Framework for Intent Negotiation and Authority Logic (or Final Is Not A Language) (the substrate, NegI implementation)
+    --Frontend: NegI - Negotiation Interface (the interface, what is developed, that's the front name)
+    --Backend: OPHANIM - Ontological Polymorphic Host for Authority and Negotiation Interface Management (the substrate, NegI implementation)
 
     -- This works more or less as ship of thesus, FINAL provides common interfaces for other manifests to communicate with each other in platform agnostic way
     local newstate = function () -- something similar to lua_newstate but for FINAL
@@ -650,6 +649,11 @@ return (function ()
         xpcall -- Host
         ]]
 
+        FLESH.KES:write_entry("NegI", FLESH.make.Frame({ -- I need to move NegI protocols inside of it
+            
+
+        }))
+
         FLESH.KES:write_entry("Protocol", { -- Protocol for new Protocols
             protocol = {
                 can = {
@@ -835,6 +839,7 @@ return (function ()
                 end]])
             }
         })
+        FLESH.KES:write_entry("pass", {}) -- explicitly ends Sequence with appropriate data. monad where first is to where and 2nd is data
         FLESH.KES:write_entry("false", {
             protocol = FLESH.KES:resolve("Number").state,
             state = {value = FLESH.KES:write_entry(nil,{external = 0})}})
