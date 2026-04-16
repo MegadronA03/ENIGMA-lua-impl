@@ -1,14 +1,15 @@
 --TODOs:
--- 1. Make Negi parser manifest and move existing parser code there. Currently it's nodes are all disconnected and just exist in main context, which just looks like some kid didn't put back toys inside a box.
+-- 1. Make Negi Frame manifest and move existing parser code there. Currently it's nodes are all disconnected and just exist in main context, which just looks like some kid didn't put back toys inside a box.
 -- 2. Frame load and Frame context. This is the last major issue that keep me from testing phase.
--- 2.1 Frame keep mutations only if passed explicitly after pop_layer. The main difficulty of this is sometimes Frame keeps mutations and sometimes don't?
--- 2.2 Frame should work simmilarly like KES layers, "store" parent and delta from parent Frame.
+-- 2.1 Frame should work simmilarly like KES layers, "store" parent and delta from parent Frame.
 -- 3. Host representation. Lua have quite messy syntax and context, we need to nicely wrap this up inside some Manifest or Frame.
--- 4. Rework dynamic membrane as delayed behaivour: rework push_layer into always grounded. grounded - immediate, dynamic - verb, isolated - contained.
+-- 4. Rework dynamic membrane as delayed behaivour: rework push_layer into always grounded. grounded - make, dynamic - quote, isolated - contain.
+-- 5. Just finish manifests (Especially Error, to check if we getting stuck in halt)
 
 return (function ()
     --Frontend: NegI - Negotiation Interface (the interface, what is developed, that's the front name)
     --Backend: OPHANIM - Ontological Polymorphic Host for Authority and Negotiation Interface Management (the substrate, NegI implementation)
+    --FINAL -> OPHANIM, the changes didn't took an effect yet
 
     -- This works more or less as ship of thesus, FINAL provides common interfaces for other manifests to communicate with each other in platform agnostic way
     local newstate = function () -- something similar to lua_newstate but for FINAL
