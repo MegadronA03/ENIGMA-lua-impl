@@ -1,4 +1,4 @@
-# The FINAL Specification & Design Rationale
+# The NegI Specification & Design Rationale
 **Version:** 0.0.6 (Pre-Release)
 **Authors:** Z_Z (MegadronA03)
 **Status:** Draft
@@ -6,6 +6,8 @@
 <div align="center">
 <img src="logo.svg" width="256" height="256"/>
 </div>
+
+updating names, so there might be inconsisntensies
 
 ## Confidence Level Legend
 To facilitate feedback, every section is tagged with a confidence level:
@@ -237,7 +239,7 @@ In the syntax `A B`, `A` negotiates with `B`.
 1. Sequence behaivours (NOTE: all effects that happened inside Sequence are destroyed after Sequence finishes. Effects can only pass outside only through either return (aka "pass" in case of FINAL))
 ```negi
 a : 1;
-b : [;a]; // "[] - immediate: membrane does nothing"
+b : [;a]; // "[] - make: membrane does nothing"
 print (b()); // "1"
 [
     a : 55;
@@ -249,7 +251,7 @@ a : 34;
 print(b()); // "34"
 
 a : 1;
-b : {;a}; // "{} - quotation: about to be evaluated construction in this case"
+b : {;a}; // "{} - quote: about to be evaluated construction in this case"
 print (b()); // "1"
 [
     a : 55;
@@ -261,7 +263,7 @@ print a; // "1"
 a : 1;
 b : {;a};
 print (b()); // "1"
-( // "() - contained: effects inside this layer are only visible for effects originated from this layer"
+( // "() - contain: effects inside this layer are only visible for effects originated from this layer"
     a : 55;
     print(b()); // "1 - quoted Sequence can't know what changed here, because it isn't originated from here"
     print a; // "55"

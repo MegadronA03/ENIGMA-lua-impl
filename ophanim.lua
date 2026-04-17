@@ -11,8 +11,8 @@ return (function ()
     --Backend: OPHANIM - Ontological Polymorphic Host for Authority and Negotiation Interface Management (the substrate, NegI implementation)
     --FINAL -> OPHANIM, the changes didn't took an effect yet
 
-    -- This works more or less as ship of thesus, FINAL provides common interfaces for other manifests to communicate with each other in platform agnostic way
-    local newstate = function () -- something similar to lua_newstate but for FINAL
+    -- This works more or less as ship of thesus, OPHANIM provides common interfaces for other manifests to communicate with each other in platform agnostic way
+    local newstate = function () -- something similar to lua_newstate but for OPHANIM
         local new_conv = function (c, ...) --helps chaining like resolve_chain("salt")(4)(5)(1).r
             local h = {c = c,r = {...}}
             setmetatable(h, {
@@ -37,8 +37,8 @@ return (function ()
             else
                 views[2][views[1][index]] = nil
                 views[1][index] = nil end end
-        local FLESH = { -- stands for "FINAL Local Environment Shared Handles"
-            FISH = { -- "FINAL Internal State Holder" - used by particular manifests to pass around some data. Could be avoided via KES, but those values are quite commonly used, so it will influence performance.
+        local FLESH = { -- stands for "Fixed Local Environment Shared Handles"
+            FISH = { -- "Fixed Internal State Holder" - used by particular manifests to pass around some data. Could be avoided via KES, but those values are quite commonly used, so it will influence performance.
                 tail_context = nil, -- context from pop_layer
                 pending_labels = nil, -- "API" for labels, that are about to be loaded by something
             },
@@ -55,7 +55,7 @@ return (function ()
 
                 resolve = function (self, ref) -- note that strings are names for indicies
                     if (type(ref) ~= "string" and type(ref) ~= "number") then
-                        error("FINAL: FLESH.KES:resolve - invalid argument, expected number or string", 2)
+                        error("OPHANIM: FLESH.KES:resolve - invalid argument, expected number or string", 2)
                     end
                     ref = (type(ref) == "number") and ref or self.labels.lb[ref] -- we override the table depending on what we resolving
                     local rt = self.bindings[ref]
@@ -78,7 +78,7 @@ return (function ()
                     --we make an exception for root layer, because there's nothing to isolate against
                     local l
                     if (#self.layers > 0) then -- initial layer is preloaded, but I still add it if user decide to pop the root layer and there will be those who would like to do that for the fun of it (hi tsoding)
-                        if (type(parent) ~= "number") then error("FINAL: FLESH.KES:push_layer - parent<number> expected for explicit grounded, got "..type(parent), 2) end -- I also think that root layers should be definable if no parent specified
+                        if (type(parent) ~= "number") then error("OPHANIM: FLESH.KES:push_layer - parent<number> expected for explicit grounded, got "..type(parent), 2) end -- I also think that root layers should be definable if no parent specified
                         local p_depth = (parent and self.layers[parent].d or 0) -- parent depth
                         local iso_depth_i, iso_depth = #self.isolations.od, nil
                         while ((self.isolations.od[iso_depth_i] or 0) > p_depth) -- we check if layer definition was outside of isolation. also binary search could be applied here
@@ -145,7 +145,7 @@ return (function ()
                     for i,_ in pairs(self.layers[layer_id].c) do
                         c[i] = self.bindings[i].records[layer_id] end
                     return c end,
-                inner_snapshot = function (self) -- used in tuple, in order to track writes
+                inner_snapshot = function (self) -- used in frame, in order to track writes
                     return self.direct_snapshot(#self.layers)
                 end,
                 cview_snapshot = function (self, outer)
@@ -172,28 +172,28 @@ return (function ()
                             local hanc = self.KES:resolve(protocol.ask)
                             if self.capcheck(label_p, rterm) then if self.capcheck(artifact_p, hanc) then return hanc.state.artifact(lterm, rterm)
                                 else return self:dispatch(hanc, {
-                                    protocol = tuple_p.state,
+                                    protocol = frame_p.state,
                                     state = {items = {lterm, rterm}, labels = {"self", "arg"}}}) end end end
                         if protocol.call then
                             if rterm.protocol and rterm.protocol.get then rterm = self:dispatch(rterm, nil) end -- 
                             local artifact_p = self.KES.bindings[self.KES.bindings.Artifact.records[self.host_layer]].records[self.host_layer]
-                            local tuple_p = self.KES.bindings[self.KES.bindings.Frame.records[self.host_layer]].records[self.host_layer]
+                            local frame_p = self.KES.bindings[self.KES.bindings.Frame.records[self.host_layer]].records[self.host_layer]
                             local hanc = self.KES:resolve(protocol.get)
                             return self.capcheck(artifact_p, hanc) and
                                 hanc.state.artifact(lterm, rterm) or
                                 self:dispatch(hanc, {
-                                    protocol = tuple_p.state,
+                                    protocol = frame_p.state,
                                     state = {items = {lterm, rterm}, labels = {"self", "arg"}}}) -- needs some standartization on how this should be passed around, don't like hardcoded "self" and "arg"
                         elseif protocol.get then -- fallback to underlying manifest for an answer
                             local artifact_p = self.KES.bindings[self.KES.bindings.Artifact.records[self.host_layer]].records[self.host_layer]
-                            local tuple_p = self.KES.bindings[self.KES.bindings.Frame.records[self.host_layer]].records[self.host_layer]
+                            local frame_p = self.KES.bindings[self.KES.bindings.Frame.records[self.host_layer]].records[self.host_layer]
                             local unhc = self.KES:resolve(protocol.get)
                             local fabk = self.capcheck(artifact_p, unhc) and
                                 unhc.state.artifact(lterm) or self:dispatch(unhc, lterm)
                             return self:dispatch(fabk, rterm)
                         else return {
                             protocol = self.KES.bindings[self.KES.bindings.Error.records[self.host_layer]].records[self.host_layer].state,
-                            state = {desc = "FINAL: FLESH:dispatch Error: rterm is outside of lterm protocol response capability"}} end
+                            state = {desc = "OPHANIM: FLESH:dispatch Error: rterm is outside of lterm protocol response capability"}} end
                     elseif protocol.get then
                             local artifact_p = self.KES.bindings[self.KES.bindings.Artifact.records[self.host_layer]].records[self.host_layer]
                             local unhc = self.KES:resolve(protocol.get)
@@ -203,7 +203,7 @@ return (function ()
                         else return lterm end
                 elseif rterm then return {
                     protocol = self.KES.bindings[self.KES.bindings.Error.records[self.host_layer]].records[self.host_layer].state,
-                    state = {desc = "FINAL: FLESH:dispatch Error: missing protocol"}}
+                    state = {desc = "OPHANIM: FLESH:dispatch Error: missing protocol"}}
                 else return lterm end
             end,
             --env methods
@@ -255,7 +255,7 @@ return (function ()
                     setmetatable(s, nil) end 
                 return v end}
             chunkname = chunkname or "chunk"
-            local a, e = load(chunk, "FINAL:"..chunkname, mode, env) 
+            local a, e = load(chunk, "OPHANIM:"..chunkname, mode, env) 
             if (a) then a, e = pcall(a) end
             if (e) then
                 local em = {
@@ -389,7 +389,7 @@ return (function ()
                 protocol = FLESH.KES.bindings[FLESH.KES.bindings.Error.records[FLESH.host_layer] ].records[FLESH.host_layer].state,
                 state = {desc = desc}}end
 
-        local host_protocols = FLESH.make.Frame({ -- while it's a mapping table, FINAL fundamentally disagree with lua on type existance, so for example userdata can't be capchecked
+        local host_protocols = FLESH.make.Frame({ -- while it's a mapping table, OPHANIM fundamentally disagree with lua on type existance, so for example userdata can't be capchecked
             ["nil"] = FLESH.KES:write_entry(nil, {protocol = {},state = {}}),
             boolean = FLESH.KES:write_entry(nil, {protocol = {
                     can = {
@@ -474,7 +474,7 @@ return (function ()
                         ["=="] = {call = make_trans_op("==")},
                         ["~="] = {call = make_trans_op("~=")},
                         format = {call = p_artifact([[return function (self, arg)
-                            -- check if arg is tuple and go on
+                            -- check if arg is frame and go on
                         ]])},
                         size = {get = make_trans("string.len")},
                         lower = {get = make_trans("string.lower")},
@@ -489,7 +489,7 @@ return (function ()
                                 end]])}}}
                     }
                 }}),
-            userdata = nil, -- the lua lables it userdata, but basically it's a capability wildcard that FINAL can't use to check against userdata instance 
+            userdata = nil, -- the lua lables it userdata, but basically it's a capability wildcard that OPHANIM can't use to check against userdata instance 
             ["function"] = FLESH.KES:write_entry(nil, {protocol = {
                     can = {
                     ["in"] = {call = capability_check},
@@ -499,7 +499,7 @@ return (function ()
                         dump = {get = p_artifact([[]])}
                     },
                     call = p_artifact([[return function (self, arg)
-                        local tuple_p
+                        local frame_p
                         return FLESH:import(self.state(table.unpack(args)))
                     end]])
                 }}),
@@ -591,8 +591,8 @@ return (function ()
                 end
             }
 
-            return function (self, o) -- imports lua object "o" inside FINAL environment
-                -- it should find FINAL's host knowledge and apply appropriate interface from it.
+            return function (self, o) -- imports lua object "o" inside OPHANIM environment
+                -- it should find OPHANIM's host knowledge and apply appropriate interface from it.
                 
                 local pif = mapping[type(o)]
                 if pif then
@@ -602,7 +602,7 @@ return (function ()
                 end
             end end)()
 
-        local host_tuple = FLESH.make.Frame({
+        local host_frame = FLESH.make.Frame({
             meta = FLESH.KES:write_entry(nil, FLESH.make.Frame({
                 name = FLESH.KES:write_entry(nil, FLESH:import("Lua 5.5")),
                 version = FLESH.KES:write_entry(nil, FLESH:import("0.0.1"))
@@ -620,7 +620,7 @@ return (function ()
             })),  
         })
 
-        --[[ -- since FINAL structured differently, lua interafec should be altered to fit the philosophy
+        --[[ -- since OPHANIM structured differently, lua interafec should be altered to fit the philosophy
         basic -- ???
         _G -- Host
         _VERSION -- Host
@@ -770,8 +770,8 @@ return (function ()
                     FLESH.KES:push_layer(self.state.parent, self.state.grounded, self.state.isolated, FLESH.FISH.tail_context or table.create(0, #prods))
                     local pl = {}
                     FISH.pending_labels = pl
-                    local tuple_p = FLESH.KES.bindings[FLESH.KES.bindings.Frame.records[FLESH.host_layer] ].records[FLESH.host_layer]
-                    if (FLESH.capcheck(tuple_p, arg)) then FLESH:dispatch(arg,nil,arg.protocol.can.load) end
+                    local frame_p = FLESH.KES.bindings[FLESH.KES.bindings.Frame.records[FLESH.host_layer] ].records[FLESH.host_layer]
+                    if (FLESH.capcheck(frame_p, arg)) then FLESH:dispatch(arg,nil,arg.protocol.can.load) end
                     for i,e in pairs(FISH.pending_labels) do FLESH.KES:write_entry() end
                     for i,e in ipairs(prods) do
                         local s = FLESH.KES:resolve(e)
@@ -867,7 +867,7 @@ return (function ()
                 return {
                     protocol = FLESH.KES.bindings[FLESH.KES.bindings.Label.records[FLESH.host_layer]].records[FLESH.host_layer].state,
                     state = {name = name}} end,
-            TUPLE = function (items) -- TODO: this one isn't a tuple, but a constructor for it that creates environment for writing, like Sequence
+            FRAME = function (items) -- TODO: this one isn't a frame, but a constructor for it that creates environment for writing, like Sequence
                 return { -- constructor
                     protocol = {get = p_artifact([[return function (self)
                         -- it's easier to do the lua way on lua side, though later I'll need to repalce it with Manifest that don't create another artifact like this
@@ -910,7 +910,7 @@ return (function ()
         local manifest = { -- manifest structure reference ()
             template = {
                 protocol = { -- always table
-                    can = {}, -- prio, find appropriate Label in front of manifest (maybe I should make this into tuple, that depicts the environment for the label in front of it)
+                    can = {}, -- prio, find appropriate Label in front of manifest (maybe I should make this into frame, that depicts the environment for the label in front of it)
                     call = nil, -- not found appropriate Label in can, do it if there is negotiation
                     get = nil, -- not found appropriate Label in can, do it anyways with (if no call) or without negotioation. this rule exist to describle labels
                     ask = nil, -- default case for respondrers, can work with call but it's heavily advised to not use with call, otherwise it will cause confusion)
@@ -953,11 +953,11 @@ return (function ()
         --so I have plans to make ast nodes obsolete
         --but this table will remain as interface that parser uses, I will just replace what those functions will do
         local AST = { -- what parser uses to make "AST"
-            GAP = function () return {type = 0} end, -- part of language. helps in tracking gaps in tuples and sequences
+            GAP = function () return {type = 0} end, -- part of language. helps in tracking gaps in frames and sequences
             NUMBER = function (value) return {type = 1, value = value} end,
             STRING = function (value) return {type = 2, value = value} end,
             LABEL = function (name) return {type = 3, name = name} end,
-            TUPLE = function (items) return {type = 4, items = items} end,
+            FRAME = function (items) return {type = 4, items = items} end,
             SEQUENCE = function (prods, creturn) return {type = 5, prods = prods, creturn = creturn} end,
             MEMBRANE = function (kind, content) return {type = 6, kind = kind, content = content} end,
             NEGOTIATION = function (lterm,rterm) return {type = 7, lterm = lterm, rterm = rterm} end
@@ -1005,7 +1005,7 @@ return (function ()
                 elseif tok.type == TOKENTYPE.LABEL then -- handle label
                     return AST.LABEL(tok.value), pos + 1
                 elseif -- handle gap
-                    -- the code below generates ast_gap, to help tracking gaps inside sequences or tuples
+                    -- the code below generates ast_gap, to help tracking gaps inside sequences or frames
                     -- we can throw gap only if expeted term terminated by one of those 2 tokens
                     tok.type == TOKENTYPE.FINISH_ELEMENT or 
                     tok.type == TOKENTYPE.FINISH_ACTION then
@@ -1041,12 +1041,12 @@ return (function ()
             return (tok ~= nil) and tok.type == tt
         end
 
-        parse_product = function(tokens, pos) -- handle ?product: tuple | term
+        parse_product = function(tokens, pos) -- handle ?product: frame | term
             local term, new_pos = parse_negotiation(tokens, pos)
             pos = new_pos
-            if check_token(tokens[pos], TOKENTYPE.FINISH_ELEMENT) then -- it's a tuple
+            if check_token(tokens[pos], TOKENTYPE.FINISH_ELEMENT) then -- it's a frame
                 -- there must be comma, but trailing one is optional. 
-                -- meaning (5,) must be valid tuple with 1 element,
+                -- meaning (5,) must be valid frame with 1 element,
                 -- while (5) is just the element
                 local items = {term}
                 repeat
@@ -1056,8 +1056,8 @@ return (function ()
                         table.insert(items, term)
                     end
                 until not check_token(tokens[pos], TOKENTYPE.FINISH_ELEMENT)
-                return AST.TUPLE(items), pos
-            else -- it's not a tuple
+                return AST.FRAME(items), pos
+            else -- it's not a frame
                 return term, pos -- could return (nil, pos) from parse_term and thats fine
             end
         end
