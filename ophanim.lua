@@ -135,7 +135,7 @@ return (function ()
                     bimap_write(self.relevance, "ld", #self.layers, l.d)
                     return #self.layers -- used if Sequence will define another Sequence
                 end,
-                pop_layer = function (self, migrate) -- P.S. while push and pop suggest stack structure, this isn't purely just that due to parent detours
+                pop_layer = function (self) -- P.S. while push and pop suggest stack structure, this isn't purely just that due to parent detours
                     self.isolations["do"][self.layers[#self.layers].d] = nil -- lift isolation sandbox
                     local shadowed_data = self.layers[#self.layers].s
                     if shadowed_data then
@@ -143,20 +143,20 @@ return (function ()
                             bimap_write(self.relevance, "ld", e, self.layers[e].d) end
                         for _,e in ipairs(shadowed_data.i) do -- restoring shadowed context isolations
                             bimap_write(self.isolations, "od", #self.isolations.od + 1, e) end end
-                    if not migrate then
-                        for i,_ in pairs(self.layers[#self.layers].c) do -- removing references from bindings
-                            local db = self.bindings
-                            local rt = db[i]
-                            rt.records[#self.layers] = nil
-                            if (rt.order.lo[#self.layers] == rt.order.ol[#rt.order.ol]) then
-                                bimap_write(rt.order, "lo", #self.layers, nil)
-                            else error("KES:pop_layer - invalid layer in unload transaction query. [Z_Z] Currently I'm thinking to keep it as user error or make code for handling this.", 2) end
-                            if #rt.records <= 0 then db[i] = nil; bimap_write(self.labels, "bl", i, nil) end end end
+                    for i,_ in pairs(self.layers[#self.layers].c) do -- removing references from bindings
+                        local db = self.bindings
+                        local rt = db[i]
+                        rt.records[#self.layers] = nil
+                        if (rt.order.lo[#self.layers] == rt.order.ol[#rt.order.ol]) then
+                            bimap_write(rt.order, "lo", #self.layers, nil)
+                        else error("KES:pop_layer - invalid layer in unload transaction query. [Z_Z] Currently I'm thinking to keep it as user error or make code for handling this.", 2) end
+                        if #rt.records <= 0 then db[i] = nil; bimap_write(self.labels, "bl", i, nil) end end
                     if (#self.layers > 0) then self.layers[#self.layers] = nil end -- removing layer
-                    return migrate and self.layers[#self.layers + 1].c or nil -- for tail calls it's preferably to return lifted context
+                    --return nil 
                 end,
-                mend_layer = function (self) -- push_layer, but just rebases current layer. for "pass" use. this is to remove migrate from pop_layer and rework context in push_layer
-                    
+                morph_layer = function (self, parent, isolated, context) -- push_layer, but just rebases current layer. for "pass" use. this is to remove migrate from pop_layer and rework context in push_layer
+                    -- I also not sure if `pass` should keep previous context layer, which this function is implies to do, because `pass` created with explicit data transfer in mind, 
+                    -- leaving something in context is implicit data transfer, which should be another explicit thing on it's own  (like snapshot into frames?)
                 end,
                 unquote_parent = function (self, parent) -- parent of (unquote action)
                     local p_depth = (parent and self.layers[parent].d or 0) -- parent depth
@@ -185,21 +185,29 @@ return (function ()
                         self.layers[#self.layers].c[ref] = true
                     end return ref
                 end, -- entry writes could only happen in current context
-                direct_snapshot = function (self, layer_id, c)
+                direct_snapshot = function (self, layer_id, c) -- 
                     c = c or {}
                     for i,_ in pairs(self.layers[layer_id].c) do
                         c[i] = self.bindings[i].records[layer_id] end
                     return c end,
-                inner_snapshot = function (self) -- used in tuple, in order to track writes
+                inner_snapshot = function (self) -- used in Frame, in order to track writes
                     return self.direct_snapshot(#self.layers)
                 end,
-                cview_snapshot = function (self, outer)
+                view_snapshot = function (self, outer)
                     local c = {}
-                    for i = #self.relevance.dl, 1, -1 do
-                        local e = self.relevance.dl[i]
-                        for i,_ in pairs(self.layers[e].c) do
-                            c[i] = c[i] or self.bindings[i].records[e] end end
+
+                    for i = 1, #self.relevance.dl - (outer and 1 or 0) do -- we still will be traversing every layer, so it's recomended that user shouldn't use it
+                        self:direct_snapshot(i,c)
+                    end
+                    --for i = #self.relevance.dl - (outer and 1 or 0), 1, -1 do
+                    --    local e = self.relevance.dl[i]
+                    --    for i,_ in pairs(self.layers[e].c) do
+                    --        c[i] = c[i] or self.bindings[i].records[e] end end
                     return c
+                end,
+                env_snapshot = function (self, outer) -- same as view_snapshot, but provides in depth trace of context changes layer by layer
+                    -- table with Frame manifests that inherit from each other
+                    -- though I think I can provide an interface for KES access through special resolves per layers, instead of doing all of this
                 end,
                 binding_label_get = function (self, b) return self.labels.bl[b] end, -- Used by Frame to make label list.
             },
@@ -556,7 +564,7 @@ return (function ()
                         return FLESH:import(self.state(table.unpack(args)))
                     end]])
                 }}),
-            thread = FLESH.KES:write_entry(nil, {protocol = {
+            thread = FLESH.KES:write_entry(nil, {protocol = { -- 
                     can = {
                         ["in"] = {call = capability_check},
                         ["="] = make_host_res_init("thread")}},
