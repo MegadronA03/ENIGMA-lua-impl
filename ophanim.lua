@@ -226,6 +226,7 @@ return (function ()
                         if protocol.ask then -- TODO: ask implementation details
                             local artifact_p = self.KES.bindings[self.KES.bindings.Artifact.records[self.host_layer]].records[self.host_layer]
                             local label_p = self.KES.bindings[self.KES.bindings.Label.records[self.host_layer]].records[self.host_layer]
+                            local frame_p = self.KES.bindings[self.KES.bindings.Frame.records[self.host_layer]].records[self.host_layer]
                             local clause = protocol.ask
                             if self.capcheck(label_p, rterm) then if self.capcheck(artifact_p, clause) then return clause.state.artifact(lterm, rterm)
                                 else return self:dispatch(clause, {
