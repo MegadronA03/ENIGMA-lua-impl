@@ -109,15 +109,15 @@ return (function ()
                 end,
                 push_layer = function (self, parent, isolated, context) -- adds new layer
                     --we make an exception for root layer, because there's nothing to isolate against
-                    local l
-                    if (#self.layers > 0) then -- initial layer is preloaded, but I still add it if user decide to pop the root layer and there will be those who would like to do that for the fun of it (hi tsoding)
+                    local not_root = (#self.layers > 0)
+                    if not_root then -- initial layer is preloaded, but I still add it if user decide to pop the root layer and there will be those who would like to do that for the fun of it (hi tsoding)
                         if (type(parent) ~= "number") then error("OPHANIM: FLESH.KES:push_layer - parent<number> expected, got "..type(parent), 2) end -- I also think that root layers should be definable if no parent specified
-                        l = { -- new layer data
-                            d = (parent and self.layers[parent].d or 0) + 1, -- new layer depth
-                            h = {r={},i={}}, -- those are hidden layers (r - relevance, i - isolation)
-                            s = {}, -- set of staged entries
-                            c = context} -- `c` is Set<reference: Number|String, exist: Boolean> references relvant to this context layer
-                    else l = {d = 1, h = {r={},i={}}, c = (size and table.create) and table.create(0, size) or {}} end
+                    end
+                    local l = { -- new layer data
+                        d = ((parent and not_root) and self.layers[parent].d or 0) + 1, -- new layer depth
+                        h = {r={},i={}}, -- those are hidden layers (r - relevance, i - isolation)
+                        s = {}, -- set of staged entries
+                        c = context or {}} -- `c` is Set<reference: Number|String, exist: Boolean> references relvant to this context layer
                     if isolated then bimap_write(self.isolations, "od", #self.isolations.od+1, l.d) end -- isolated (external binding resolving, causes it to use resolving oblivious to effects from here)
                     for d = #self.relevance.dl, l.d, -1 do -- exclude all layers between parent and new layer via depth
                         l.h.r[#l.h.r+1] = self.relevance.dl[d] -- hide layers (we can ask depth form them directly)
