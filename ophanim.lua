@@ -269,12 +269,8 @@ return (function ()
         -- on get it's just self (tables, not KES IDs)
         -- the return should return Manifest (tables, not KES IDs)
 
-        --I need to make things clear
-        --Manifest can only store references to stuff inside it's state
-        --meaning if it's related to user modifyable storage, we store KES label or binding (refer to Frame)
-        --if something different getting stored, it's host resources, that user can only interact with it via protocol
-        --which means yes, state itself is opaque host resource
-
+        --I need to make things clear:
+        --Inside Manifest state is opaque host resource.
 
         FLESH.make = {} -- Manifest constructors
 
