@@ -286,7 +286,7 @@ return (function ()
             local m = {protocol = protocol, state = state}
             
             if type(protocol) ~= "table" then 
-                local frra = FLESH.KES:resolve(protocol)
+                local frra = FLESH.KES:resolve(protocol) -- I do wonder if I should just pull from NegI.Manifests at this point
 
                 if frra then -- convinence
                     m.protocol = frra.state
@@ -354,7 +354,7 @@ return (function ()
 
         --common between protocol manifests
         local capability_check = FLESH.make.Artifact([[return function (self, arg)
-            return FLESH.capcheck(self, arg) and FLESH.KES:resolve("true") or FLESH.KES:resolve("false") end]], "capcheck")
+            return FLESH.make.Number(FLESH.capcheck(self, arg)) end]], "capcheck")
         
         FLESH.NegI.Manifests.Artifact.protocol.can["in"] = capability_check
         FLESH.NegI.Manifests.Artifact.protocol.can["="] = FLESH.make.Artifact([[return function (self, arg) end]])
@@ -689,9 +689,7 @@ return (function ()
                 can = {
                     name = {get = FLESH.make.Artifact([[]])}, 
                     desc = {get = FLESH.make.Artifact([[return function (self)
-                        return { -- UNFINISHED
-                            protocol = FLESH.KES:resolve("String").state,
-                            state = tostring(self.state.desc)}
+                        return FLESH.make.String(tostring(self.state.desc))
                     end]])}, 
                     caller = {get = FLESH.make.Artifact([[]])},
                     trace = {get = FLESH.make.Artifact([[]])},
@@ -764,7 +762,7 @@ return (function ()
                         end]])},
                     },
                     get = FLESH.make.Artifact([[return function (self) 
-                        return FLESH.KES:resolve(self.state.name)
+                        return FLESH.make.String(self.state.name)
                     end]])
             }),
             Frame = FLESH.make.Manifest({
@@ -809,16 +807,13 @@ return (function ()
                     },
                     call = FLESH.make.Artifact([[return function (self, arg)
                         local prods = self.state.prods
-                        --FLESH.KES:push_layer(self.state.parent, self.state.isolated, table.create and table.create(0, #prods) or nil) -- preparing for membrane rework, 
                         local frame_p = FLESH.NegI.Manifests.Frame
                         if (FLESH.capcheck(frame_p, arg)) then FLESH:dispatch(arg,nil,arg.protocol.can.load) end
                         for i,e in ipairs(prods) do
-                            FISH.def_isolated = false
                             if (e.protocol.get) then
                                 e = FLESH:dispatch(e, nil)
                                 FLESH.KES:stage_fill_reserve(e)
                                 FLESH.KES:commit() end end
-                        --FLESH.KES:pop_layer() -- for TCO we probably'll need Frame from pop_layer
                         return FLESH:dispatch(self.state.creturn, nil)
                     end]])
             }),
