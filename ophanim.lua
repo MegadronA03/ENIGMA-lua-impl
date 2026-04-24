@@ -192,32 +192,28 @@ return (function ()
                         self.layers[#self.layers].c[ref] = true
                     end return ref
                 end, -- entry writes could only happen in current context
-                direct_snapshot = function (self, layer_id, c) -- THIS IS RAW AUTHORITY THAT VOIDS SECURITY GUARANTEES
-                    c = c or {}
-                    for i,_ in pairs(self.layers[layer_id].c) do
-                        c[i] = self.bindings[i].records[layer_id] end
-                    return c end,
+                direct_snapshot = function (self, layer_id, frame_state) -- THIS IS RAW AUTHORITY THAT VOIDS SECURITY GUARANTEES
+                    frame_state = frame_state or {labels = {lb={},bl={}}, bindings = {}} -- when provided, pours effects directly
+                    for b,_ in pairs(self.layers[layer_id].c) do
+                        frame_state.bindings[#frame_state.bindings+1] = {delta = self.bindings[b].records[#self.layers]}
+                        bimap_write(frame_state.labels, "bl", #frame_state.bindings, self.labels[b]) end
+                    return frame_state end,
                 inner_snapshot = function (self) -- used in Frame, in order to track writes
                     return self.direct_snapshot(#self.layers)
                 end,
                 view_snapshot = function (self, outer)
-                    local c = {}
-
+                    local frame_state = {labels = {lb={},bl={}}, bindings = {}}
                     for i = 1, #self.relevance.dl - (outer and 1 or 0) do -- we still will be traversing every layer, so it's recomended that user shouldn't use it
-                        self:direct_snapshot(i,c)
+                        self:direct_snapshot(i,frame_state)
                     end
-                    --for i = #self.relevance.dl - (outer and 1 or 0), 1, -1 do
-                    --    local e = self.relevance.dl[i]
-                    --    for i,_ in pairs(self.layers[e].c) do
-                    --        c[i] = c[i] or self.bindings[i].records[e] end end
-                    return c
+                    return frame_state
                 end,
                 env_snapshot = function (self, outer) -- same as view_snapshot, but provides in depth trace of context changes layer by layer
                     -- table with Frame manifests that inherit from each other
                     -- though I think I can provide an interface for KES access through special resolves per layers, instead of doing all of this
                     -- THIS IS AN AUTHORITY FOR DEBUGGER, THIS VIOLATES SECURITY GUARANTEES
                 end,
-                binding_label_get = function (self, b) return self.labels.bl[b] end, -- Used by Frame to make label list. probably pe replaced by 'pop_layer' Frame return
+                --binding_label_get = function (self, b) return self.labels.bl[b] end, -- Used by Frame to make label list. probably pe replaced by 'pop_layer' Frame return
             },
             dispatch = function (self, lterm, rterm, protocol) -- this is solid, except capchecks and 
                 if lterm == nil then return end
