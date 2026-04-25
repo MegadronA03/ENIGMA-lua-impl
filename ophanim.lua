@@ -3,7 +3,7 @@
 -- 2. Just finish manifests (Especially Error, to check if we getting stuck in halt)
 -- 3. Tokens should keep track of current evaluated data by having access to the Host device (like Artifacts do), but here in PoC we just refere to it directly through FISH due to "it's convinient" and "that stuff is depandant on host"
 
--- Major problems that keep this project from testing phase are 2
+-- Major problems that keep this project from testing phase is 2
 
 return (function ()
     --Frontend: NegI - Negotiation Interface (the interface, what is developed, that's the front name)
