@@ -164,9 +164,9 @@ return (function ()
                     local stage = self.layers[#self.layers].s
                     for _,i in ipairs(stage.r) do self:stage_entry(data, i) end
                 end,
-                commit = function (self, add_unnamed) -- apply staged changes
+                commit = function (self) -- apply staged changes
                     local stage = self.layers[#self.layers].s
-                    local wue = add_unnamed and function (self, e)
+                    local wue = true and function (self, e)
                         e.b[#e.b+1] = self:write_entry(nil, e.d)
                     end or function (self, e) end
                     for _, e in ipairs(stage.e) do
@@ -195,7 +195,12 @@ return (function ()
                     frame_state = frame_state or {labels = {lb={},bl={}}, bindings = {}} -- when provided, pours effects directly
                     for b,_ in pairs(self.layers[layer_id].c) do
                         frame_state.bindings[#frame_state.bindings+1] = {delta = self.bindings[b].records[#self.layers]}
-                        bimap_write(frame_state.labels, "bl", #frame_state.bindings, self.labels[b]) end
+                        pprint(frame_state)
+                        bimap_write(
+                            frame_state.labels,
+                             "bl",
+                              #frame_state.bindings,
+                               self.labels[b]) end
                     return frame_state end,
                 inner_snapshot = function (self) -- used in Frame, in order to track writes
                     return self:direct_snapshot(#self.layers)
@@ -247,7 +252,7 @@ return (function ()
                             local frame_p = self.NegI.Manifests.Frame
                             local clause = protocol.call
                             return self.capcheck(artifact_p, clause) and
-                                clause.state.artifact(lterm, rterm) or
+                                (clause.state.artifact(lterm, rterm) or self.NegI.Manifests.gap) or
                                 self:dispatch(clause, self.make.Frame({self = lterm, arg = rterm})) -- needs some standartization on how this should be passed around, don't like hardcoded "self" and "arg"
                         elseif protocol.get then -- fallback to underlying manifest for an answer
                             --print("get.")
@@ -255,7 +260,7 @@ return (function ()
                             local frame_p = self.NegI.Manifests.Frame
                             local clause = protocol.get
                             local fabk = self.capcheck(artifact_p, clause) and
-                                clause.state.artifact(lterm) or self:dispatch(clause, lterm)
+                                (clause.state.artifact(lterm) or self.NegI.Manifests.gap) or self:dispatch(clause, lterm)
                             return self:dispatch(fabk, rterm)
                         else return self.make.Error("OPHANIM: FLESH:dispatch Error: rterm is outside of lterm protocol capability") end
                     elseif protocol.get then
@@ -263,7 +268,7 @@ return (function ()
                         local artifact_p = self.NegI.Manifests.Artifact
                         local clause = protocol.get
                         if self.capcheck(artifact_p, clause) then
-                            return clause.state.artifact(lterm)
+                            return clause.state.artifact(lterm) or self.NegI.Manifests.gap
                         else return self:dispatch(clause, lterm) end
                     else return lterm end
                 elseif rterm then return self.make.Error("OPHANIM: FLESH:dispatch Error: missing protocol")
@@ -382,34 +387,40 @@ return (function ()
             for i,e in pairs(self.state) do
                 if (arg.protocol[i] ~= e) then
                     return false end end
-            for i,e in pairs(self.state.can) do
-                if (arg.protocol.can[i] ~= e) then
-                    return false end end
+            if self.state.can ~= arg.protocol.can then return false
+            elseif self.state.can and arg.protocol.can then
+                for i,e in pairs(self.state.can) do
+                    if (arg.protocol.can[i] ~= e) then
+                        return false end end 
+            end
             return true end
 
         FLESH.capcheck = function(self, arg) -- Even through fallbacks, is manifest implements this protocol?
             -- TODO: check protocol in flat form, we need to make sure clauses are reachable, not that there is inside chain some Manifest that satisfy intent.
-            local fail = function () return arg.protocol.get and FLESH.capcheck(FLESH:dispatch(arg, nil)) or false end
+            local fail = function () return arg.protocol.get and FLESH.capcheck(self, FLESH:dispatch(arg, nil)) or false end
             for i,e in pairs(self.state) do
                 if (arg.protocol[i] ~= e) then
                     return fail() end end
-            for i,e in pairs(self.state.can) do
-                if (arg.protocol.can[i] ~= e) then
-                    return fail() end end
+            if self.state.can ~= arg.protocol.can then return fail()
+            elseif self.state.can and arg.protocol.can then
+                for i,e in pairs(self.state.can) do
+                    if (arg.protocol.can[i] ~= e) then
+                        return fail() end end 
+            end
             return true end
 
         --common between protocol manifests
         local capability_check = FLESH.make.Artifact([[return function (self, arg)
-            return FLESH.make.Number(FLESH.capcheck(self, arg)) end]], "capcheck")
+            return FLESH.make.Number(FLESH.capcheck(self, arg)) end]], "`in` aka capcheck")
         
         FLESH.NegI.Manifests.Artifact.protocol.can["in"] = capability_check
-        FLESH.NegI.Manifests.Artifact.protocol.can["="] = FLESH.make.Artifact([[return function (self, arg) end]])
+        FLESH.NegI.Manifests.Artifact.protocol.can["="] = FLESH.make.Artifact([[return function (self, arg) end]], "Artifact can =")
         FLESH.NegI.Manifests.Artifact.state.can.reload = FLESH.make.Artifact([[return function (self)
-            return FLESH.make.Artifact(self.state.chunk, self.state.chunkname, self.state.mode, self.state.env) end]])
-        FLESH.NegI.Manifests.Artifact.state.can.introspect = FLESH.make.Artifact([[return function (self, arg) end]])
+            return FLESH.make.Artifact(self.state.chunk, self.state.chunkname, self.state.mode, self.state.env) end]], "Artifact can reload")
+        FLESH.NegI.Manifests.Artifact.state.can.introspect = FLESH.make.Artifact([[return function (self, arg) end]], "Artifact can intospect")
         FLESH.NegI.Manifests.Artifact.state.call = FLESH.make.Artifact([[return function(self, arg)
             local tunp = unpack or table.unpack
-            return self.state.artifact(tunp(arg)) end]])
+            return self.state.artifact(tunp(arg)) end]], "Artifact call")
 
         FLESH.make.Frame = function (t)
             -- WARNING: the nested table is interface, but the content of it must be Manifests
@@ -446,12 +457,12 @@ return (function ()
                 else
                     return -- Error manifest
                 end
-            end]])
+            end]], op.." operator call")
         end
         local make_trans = function (trans)
             return FLESH.make.Artifact([[return function (self)
                 return FLESH:import(]]..trans..[[(self.state))
-            end]])
+            end]], trans.." uniarg call")
         end
         local make_host_res_init = function (host_type)
             return FLESH.make.Artifact([[return function (self, arg)
@@ -730,12 +741,15 @@ return (function ()
             Native = FLESH.make.Manifest({ -- should represent state during introspection, to make it hostile
                 ["in"] = {call = capability_check}},{
                 can = { -- lua allows importing, but compiled/static languages have a possibility of not working out like that
-                    import = {get = FLESH.make.Artifact("return function (self) return FLESH:import(self.state) end")}}
+                    import = {get = FLESH.make.Artifact("return function (self) return FLESH:import(self.state) end", "Native can import")}}
             }),
             Artifact = FLESH.NegI.Manifests.Artifact, -- Host authority descriptor, seek definition before this
             Error = FLESH.make.Manifest({ -- Error is always as valua
-                ["in"] = {call = capability_check},
-                ["="] = {call = FLESH.make.Artifact([[]])}},{
+                can = {
+                    ["in"] = {call = capability_check},
+                    ["="] = {call = FLESH.make.Artifact([[]])}
+                }
+            },{
                 can = {
                     name = {get = FLESH.make.Artifact([[]])}, 
                     desc = {get = FLESH.make.Artifact([[return function (self)
@@ -880,23 +894,27 @@ return (function ()
                                 FLESH.KES:stage_fill_reserve((e ~= FLESH.NegI.Manifests.gap) and e or nil)
                                 FLESH.KES:commit() end end
                         return FLESH:dispatch(self.state.creturn, nil)
-                    end]])
+                    end]], "Sequence call")
             }),
             Membrane = FLESH.make.Manifest({ -- represent the layers and how they affect environment
-                ["in"] = {call = capability_check},
-                ["="] = {call = FLESH.make.Artifact([[]])}
+                can = {
+                    ["in"] = {call = capability_check},
+                    ["="] = {call = FLESH.make.Artifact([[]])}
+                }
             },{
                 get = FLESH.make.Artifact([[return function (self)
                     local parent = self.state.quoted and FLESH.KES:unquote_parent(self.state.parent) or self.state.parent
                     FLESH.KES:push_layer(parent, self.state.contain)
-                    local output = FLESH:dispatch(self.state.content)
+                    local output = FLESH:dispatch(self.state.content or FLESH.NegI.Manifests.gap)
                     FLESH.KES:pop_layer()
                     return output
-                end]]),
+                end]], "Membrane get"),
             }), -- I think I should make distinction between Membranes, though parent Manifest with inherited capabilities will be here
             Make = FLESH.make.Manifest({ -- aka [] or grounded (because push_layer will be grounded by default)
-                ["in"] = {call = capability_check},
-                ["="] = {call = FLESH.make.Artifact([[]])}
+                can = {
+                    ["in"] = {call = capability_check},
+                    ["="] = {call = FLESH.make.Artifact([[]])}
+                }
             },{
                 get = FLESH.make.Artifact([[return function (self)
                     return FLESH:dispatch(FLESH.make.Manifest(FLESH.NegI.Manifests.Membrane.state, {
@@ -904,11 +922,13 @@ return (function ()
                         contain = false,
                         quoted = false,
                         content = self.state}))
-                end]])
+                end]], "Make get")
             }),
             Quote = FLESH.make.Manifest({ -- aka {} or dynamic (because it will shift parent within isolation)
-                ["in"] = {call = capability_check},
-                ["="] = {call = FLESH.make.Artifact([[]])}
+                can = {
+                    ["in"] = {call = capability_check},
+                    ["="] = {call = FLESH.make.Artifact([[]])}
+                }
             },{
                 get = FLESH.make.Artifact([[return function (self)
                     return FLESH.make.Manifest(FLESH.NegI.Manifests.Membrane.state, {
@@ -916,11 +936,13 @@ return (function ()
                         contain = false,
                         quoted = true,
                         content = self.state})
-                end]])
+                end]], "Quote get")
             }),
             Contain = FLESH.make.Manifest({ -- aka () or isolated
-                ["in"] = {call = capability_check},
-                ["="] = {call = FLESH.make.Artifact([[]])}
+                can = {
+                    ["in"] = {call = capability_check},
+                    ["="] = {call = FLESH.make.Artifact([[]])}
+                }
             },{
                 get = FLESH.make.Artifact([[return function (self)
                     return FLESH:dispatch(FLESH.make.Manifest(FLESH.NegI.Manifests.Membrane.state, {
@@ -928,23 +950,20 @@ return (function ()
                         contain = true,
                         quoted = false,
                         content = self.state}))
-                end]])
+                end]], "Contain get")
             }),
             Negotiation = FLESH.make.Manifest({
                 can = {
                     ["in"] = {call = capability_check},
                     ["="] = {call = FLESH.make.Artifact([[]])}
                 }},{
-                    bindings = {
-
-                    },
                     get = FLESH.make.Artifact([[return function (self)
                         -- resolve terms: we hold references in state, not data
                         local lt = self.state.lterm
                         local rt = self.state.rterm
 
                         return FLESH:dispatch(lt, rt)
-                    end]])
+                    end]], "Negotiation get")
             }),
         }
 
@@ -996,17 +1015,14 @@ return (function ()
                 FRAME = function (items) -- TODO: this one isn't a frame, but a frame constructor, that creates environment for writing, like Sequence
                     return { -- constructor
                         protocol = {get = FLESH.make.Artifact([[return function (self)
-                            -- it's easier to do the lua way on lua side, though later I'll need to repalce it with Manifest that don't create another artifact like this
-                            -- TODO: rework under `labels` and `bindings`
                             local items = self.state.items
                             local labels = table.create and {lb=table.create(0,#items),bl=table.create(0,#items)} or {lb={},bl={}}
-                            --FLESH.KES:push_layer(FLESH.KES:get_context(), true)
                             for i,m in ipairs(items) do e = FLESH:dispatch(m); FLESH.KES:stage_fill_reserve((e ~= FLESH.NegI.Manifests.gap) and e or nil) end
-                            FLESH.KES:commit(true) -- this could be used mid Sequence, this emergently allow to shuffle labels around
+                            FLESH.KES:commit() -- this could be used mid Sequence, this emergently allow to shuffle labels around
                             return {
                                 protocol = FLESH.NegI.Manifests.Frame.state,
                                 state = FLESH.KES:inner_snapshot()} -- this might be slower, compared to just poping a Frame from layer, but as long as it works without hacks, I'm satisfied
-                        end]])},--ref to manifest for running an evaluation (that would be Sequence or Artifact).
+                        end]], "CreateFrame get")},--ref to manifest for running an evaluation (that would be Sequence or Artifact).
                         state = {items = items}} end,
                 SEQUENCE = function (prods, creturn) -- Sequence holds quoted stuff, so we are not doing any actual construction
                     return {
