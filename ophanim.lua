@@ -794,8 +794,8 @@ return (function ()
             ["false"] = FLESH.make.Manifest("Number",0), -- sugar
             ["true"] = FLESH.make.Manifest("Number",1), -- sugar
             gap = FLESH.make.Manifest({},{}), -- it's fine, that's how it should be
-            Number = FLESH.make.Manifest({dummy = ""},{}), -- need to make generic host agnostic number representation (maybe even Rational out of 2 BigIntegers or just BigInteger to not conflate these 2 for the compilation process)
-            String = FLESH.make.Manifest({dummy = ""},{}), -- some languages might have to emulate this
+            Number = FLESH.make.Manifest({},{can = {}}), -- need to make generic host agnostic number representation (maybe even Rational out of 2 BigIntegers or just BigInteger to not conflate these 2 for the compilation process)
+            String = FLESH.make.Manifest({},{can = {}}), -- some languages might have to emulate this
             Label = FLESH.make.Manifest({ -- it's job is to represent a get query from KES to load manifests
                 can = {
                     ["in"] = {call = capability_check},
