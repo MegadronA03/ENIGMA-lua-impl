@@ -1,6 +1,6 @@
 # NegI 
 **Version:** 0.0.1 (PoC pre-alpha)
-**Implementation status:** Working (Polishing user environment)
+**Implementation status:** Boots (fixing critical bugs and finishing user environment)
 
 <div align="center">
 <img src="logo.svg" width="256" height="256"/>

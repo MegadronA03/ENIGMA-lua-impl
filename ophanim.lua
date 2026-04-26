@@ -196,7 +196,7 @@ return (function ()
                         bimap_write(frame_state.labels, "bl", #frame_state.bindings, self.labels[b]) end
                     return frame_state end,
                 inner_snapshot = function (self) -- used in Frame, in order to track writes
-                    return self.direct_snapshot(#self.layers)
+                    return self:direct_snapshot(#self.layers)
                 end,
                 view_snapshot = function (self, outer)
                     local frame_state = {labels = {lb={},bl={}}, bindings = {}}
@@ -970,7 +970,7 @@ return (function ()
                             local items = self.state.items
                             local labels = table.create and {lb=table.create(0,#items),bl=table.create(0,#items)} or {lb={},bl={}}
                             --FLESH.KES:push_layer(FLESH.KES:get_context(), true)
-                            for i,m in ipairs(items) do FLESH.KES:stage_fill_reserve(dispatch(m, nil)) end
+                            for i,m in ipairs(items) do FLESH.KES:stage_fill_reserve(FLESH:dispatch(m, nil)) end
                             FLESH.KES:commit(true) -- this could be used mid Sequence, this emergently allow to shuffle labels around
                             return {
                                 protocol = FLESH.NegI.Manifests.Frame.state,
