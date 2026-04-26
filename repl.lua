@@ -24,7 +24,7 @@ while true do
         OState.KES:commit()
         --pprint(r)
         --pprint(OState.KES.bindings)
-        OState.KES:log_bindings(pprint)
+        --OState.KES:log_bindings(pprint)
     end
 end
 -- starting to make the system alive
