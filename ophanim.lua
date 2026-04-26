@@ -6,7 +6,7 @@
 return (function ()
     --Frontend: NegI - Negotiation Interface (the interface, what is developed, that's the front name)
     --Backend: OPHANIM - Ontological Polymorphic Host for Authority and Negotiation Interface Management (the substrate, NegI implementation)
-
+    local pprint = require("pprint") -- remove after fixing problems
     -- This works more or less as ship of thesus, OPHANIM provides common interfaces for other manifests to communicate with each other in platform agnostic way
     local newstate = function () -- something similar to lua_newstate but for OPHANIM
         local new_conv = function (c, ...) --helps chaining like resolve_chain("salt")(4)(5)(1).r
@@ -222,15 +222,20 @@ return (function ()
                 end,
                 --binding_label_get = function (self, b) return self.labels.bl[b] end, -- Used by Frame to make label list. probably pe replaced by 'pop_layer' Frame return
             },
-            dispatch = function (self, lterm, rterm, protocol) -- this is solid, except capchecks and 
-                if lterm == nil then return end
+            dispatch = function (self, lterm, rterm, protocol) -- needs debugging
+                --print("dispatch start")
+                if lterm == nil then error("FLESH:dispatch - got nil, expected Manifest") return end
                 protocol = protocol or lterm.protocol -- protocol argument is optional and here only for convinience, so I don't have to recreate manifest with transformed protocols
                 if protocol then
                     if rterm then
                         if protocol.can then -- both "can" and "ask" may not be fulfilled unlike "can" or "get" or abscense of protocol clauses
+                            --print("can?")
                             local label_p = self.NegI.Manifests.Label -- we use direct access, because this stuff will depend on furst record anyways
-                            if self.capcheck(label_p, rterm) then return {protocol = protocol.can[rterm.state.name], state = lterm.state} end end  -- TODO: we need to check if it's exist
+                            if self.capcheck(label_p, rterm) then 
+                                local p = protocol.can[rterm.state.name]
+                                return p and {protocol = p, state = lterm.state} or self.make.Error("OPHANIM: FLESH:dispatch Error: invalid `can` case") end end
                         if protocol.ask then -- `ask` clause exist solely for cases when Manifest need to handle arbitrary labels, like vector axis swizzling, field "modification" (the field might be abscent) and etc
+                            --print("ask?")
                             local artifact_p = self.NegI.Manifests.Artifact -- currently it's tightly coupled, I'll need to slightly rework this
                             local label_p = self.NegI.Manifests.Label
                             local frame_p = self.NegI.Manifests.Frame
@@ -238,6 +243,7 @@ return (function ()
                             if self.capcheck(label_p, rterm) then if self.capcheck(artifact_p, clause) then return clause.state.artifact(lterm, rterm)
                                 else return self:dispatch(clause, self.make.Frame({self = lterm, arg = rterm})) end end end
                         if protocol.call then
+                            --print("call?")
                             if rterm.protocol and rterm.protocol.get then rterm = self:dispatch(rterm, nil) end -- passive evaluation, because caller expect contents
                             local artifact_p = self.NegI.Manifests.Artifact
                             local frame_p = self.NegI.Manifests.Frame
@@ -246,6 +252,7 @@ return (function ()
                                 clause.state.artifact(lterm, rterm) or
                                 self:dispatch(clause, self.make.Frame({self = lterm, arg = rterm})) -- needs some standartization on how this should be passed around, don't like hardcoded "self" and "arg"
                         elseif protocol.get then -- fallback to underlying manifest for an answer
+                            --print("get.")
                             local artifact_p = self.NegI.Manifests.Artifact
                             local frame_p = self.NegI.Manifests.Frame
                             local clause = protocol.get
@@ -254,6 +261,7 @@ return (function ()
                             return self:dispatch(fabk, rterm)
                         else return self.make.Error("OPHANIM: FLESH:dispatch Error: rterm is outside of lterm protocol capability") end
                     elseif protocol.get then
+                        --print("get explicit.")
                         local artifact_p = self.NegI.Manifests.Artifact
                         local clause = protocol.get
                         if self.capcheck(artifact_p, clause) then

@@ -8,6 +8,7 @@ for k,v in pairs(OState.NegI.Manifests) do
     print("-------------------------------- "..k.." --------------------------------")
     pprint(v)
 end--]]
+OState.pprint = pprint
 print("================================================================")
 while true do
     io.write(">")
