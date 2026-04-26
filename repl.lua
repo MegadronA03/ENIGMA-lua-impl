@@ -87,5 +87,13 @@ local ophanim = require("ophanim")
 local OState = ophanim.newstate()
 --print_table(OState)
 print("================================================================")
-print_table(OState:dispatch(OState.NegI.parse(io.read())))
+while true do
+    io.write(">")
+    local input = io.read()
+    if input == "exit" then
+        break
+    else
+        print_table(OState:dispatch(OState.NegI.parse(input)))
+    end
+end
 -- starting to make the system alive
