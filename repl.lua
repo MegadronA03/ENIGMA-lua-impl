@@ -22,7 +22,7 @@ while true do
         local r = OState:dispatch(pres)
         OState.KES:stage_fill_reserve((r ~= OState.NegI.Manifests.gap) and r or nil)
         OState.KES:commit()
-        --pprint(r)
+        pprint(r)
         --pprint(OState.KES.bindings)
         --OState.KES:log_bindings(pprint)
     end
