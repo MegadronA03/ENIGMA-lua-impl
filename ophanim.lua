@@ -685,7 +685,7 @@ return (function ()
                         local num_p = FLESH.NegI.Manifests.Number
                         local str_p = FLESH.NegI.Manifests.String
                         if (FLESH.capcheck(num_p, arg) or FLESH.capcheck(str_p, arg)) then
-                            return FLESH.NegI.Intrinsincs.frame_index(self.state, arg.state) or FLESH.NegI.Manifests.gap
+                            return FLESH:dispatch(FLESH.NegI.Intrinsincs.frame_index(self.state, arg.state) or FLESH.NegI.Manifests.gap)
                         elseif (FLESH.capcheck({state = self.protocol}, arg) and arg) then -- slicing in python style
                             
                         else
@@ -805,10 +805,10 @@ return (function ()
             Function = FLESH.make.Manifest({},{}),
             Structure = FLESH.make.Manifest({},{}),
             _context = FLESH.make.Manifest({
-                can = {
-                    inner = {get = FLESH.make.Artifact([[return function (self) return FLESH.KES:inner_snapshot() end]])},
-                    outer = {get = FLESH.make.Artifact([[return function (self) return FLESH.KES:view_snapshot(true) end]])},
-                    full = {get = FLESH.make.Artifact([[return function (self) return FLESH.KES:view_snapshot(false) end]])},
+                can = { -- TODO: investigate dropped dispatch
+                    inner = {get = FLESH.make.Artifact([[return function (self) return FLESH.make.Manifest(FLESH.NegI.Manifests.Frame.state, FLESH.KES:inner_snapshot()) end]])},
+                    outer = {get = FLESH.make.Artifact([[return function (self) return FLESH.make.Manifest(FLESH.NegI.Manifests.Frame.state, FLESH.KES:view_snapshot(true)) end]])},
+                    full = {get = FLESH.make.Artifact([[return function (self) return FLESH.make.Manifest(FLESH.NegI.Manifests.Frame.state, FLESH.KES:view_snapshot(false)) end]])},
                 }
             },{}), -- not sure about naming
         }
