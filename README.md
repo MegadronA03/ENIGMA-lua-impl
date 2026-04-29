@@ -16,5 +16,5 @@ The `ophanim.lua` (backend name) is a 1 file library for Lua 5.5. You can either
 # 0.1.0 roadmap (finished PoC version)
 1. Host representation. Lua have quite messy syntax and context, we need to nicely wrap this up inside some Manifest or Frame.
 2. Just finish manifests (Especially Error, to check if we getting stuck in halt)
-3. Tokens should keep track of current evaluated data by having access to the Host device (like Artifacts do), but here in PoC we just refere to it directly through FISH due to "it's convinient" and "that stuff is depandant on host"
+3. Tokens should keep track of current evaluated data by having access to the Host device (like Artifacts do)
 4. User facing REPL
