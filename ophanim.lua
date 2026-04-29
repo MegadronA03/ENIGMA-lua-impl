@@ -7,6 +7,7 @@ return (function ()
     --Frontend: NegI - Negotiation Interface/Negate Identity (the interface, what is developed, that's the front name)
     --Backend: OPHANIM - Ontological Polymorphic Host for Authority and Negotiation Interface Management (the substrate, NegI implementation)
     local pprint = require("pprint") -- remove after fixing problems
+    --local ltr = require("luatrace") -- remove after fixing problems
     -- This works more or less as ship of thesus, OPHANIM provides common interfaces for other manifests to communicate with each other in platform agnostic way
     local newstate = function () -- something similar to lua_newstate but for OPHANIM
         local new_conv = function (c, ...) --helps chaining like resolve_chain("salt")(4)(5)(1).r
@@ -69,29 +70,41 @@ return (function ()
             fwd_view[index] = value
             rev_view[value] = index
         end
-        local FLESH = { -- stands for "Fixed Local Environment Shared Handles"
+        local FLESH
+        FLESH = { -- stands for "Fixed Local Environment Shared Handles"
             FISH = { -- "Fixed Internal State Holder" - used by particular manifests to pass around some data. Could be avoided via KES, but those values are quite commonly used, so it will influence performance.
                 -- probably reserved for parser tokens, but I might leave that up to Tokens themselves
             },
             KES = { -- "Knowledge Environment State" (considered finished, until bugs will be found)
-                layers = {{d = 1,h = {r={},i={}},s = {a={},e={},r={}},c = {}}}, -- stack of references, string names ready for free (initial layer is preloaded)
+                layers = {{d = 1,h = {r={},i={}},s = {a={},e={},r={}},c = {ob={},bo={}}}}, -- stack of references, string names ready for free (initial layer is preloaded)
                 relevance = { -- tracks what currently available in active context
                     dl = {[1]=1}, -- Array<depth: Integer, layer_id: Integer> 
                     ld = {[1]=1}}, -- Map<layer_id: Integer, depth: Integer> stores which layers are relevent to current context, mostly used as Set<layer_id: Integer>
                 isolations = { -- tracks to which layer unquotation should latch. basically ordered Set<depth: Integer>
                     ["od"] = {}, -- Array<order: Integer, depth: Integer> - we use this to iterate through them
                     ["do"] = {}}, -- Map<depth: Integer, order: Integer> - that the depths of those, also "do" key is the reason I hate keywords
-                labels = {lb = {}, bl = {}}, -- BiMap<label: String, bind: Number> holds labeled refences, bimap/not in bindings - because it's an extension that exist only for the user
-                bindings = {}, -- Array<bind: Number, {records: Map<layer_id: Integer, entry: Manifest>, order: BiMap<layer_id: Integer, order: Integer>}> holds references to data
+                -- we changed assumptions, now labels will store both numeric and string labels, while bindings won't be acessible directly for the user
+                labels = { -- tracks public(String)/anonymic(Number) binding names. BiMap<label: String|Number, bind: Number> holds labeled refences, bimap/not in bindings - because it's an extension that exist only for the user
+                    bl = {}, -- Array<bind : Integer, label: String|Integer>
+                    lb = {}}, -- Map<label: String|Integer, bind : Integer>
+                bindings = {}, -- Array<bind: Integer, {records: Map<layer_id: Integer, entry: Manifest>, order: BiMap<layer_id: Integer, order: Integer>}> holds references to data
+                --bindings = ltr.trace.table({},nil,--function (c,t,k) print(string.format("READ AT: %s on %s, key %s:%s", c.name or "<ANON>", c.currentline, tostring(k), tostring(type(k)))) end,
+                --    function (c,t,k,v)
+                --        print(string.format("WRITE AT: %s on %s, key %s:%s, val %s:%s", c.name or "<ANON>", c.currentline, tostring(k), tostring(type(k)), tostring(v), tostring(type(v))))
+                --    end
+                --),
                 
                 resolve = function (self, ref, framed) -- note that strings are names for indicies, "framed" is used by Frame to get data from current Frame
                     if (type(ref) ~= "string" and type(ref) ~= "number") then
                         error("OPHANIM: FLESH.KES:resolve - invalid argument, expected number or string", 2)
                     end
-                    --io.write("resolving `"..ref.."`")
-                    ref = (type(ref) == "number") and ref or self.labels.lb[ref] -- we override the table depending on what we resolving
-                    --io.write("(aka binding: "..(ref or "UNKNOWN")..") at:"..#self.layers.."\n")
-                    local rt = self.bindings[ref]
+                    local rt
+                    if type(ref) == "number" then -- anonymic bindings are always local
+                        framed = true
+                        rt = self.bindings[self.layers[#self.layers].c.ob[ref]]
+                    else
+                        rt = self.bindings[self.labels.lb[ref]]
+                    end
                     if (rt == nil) then return end -- the environment don't know about this binding so we exit early, this line is optional
                     local m, fh -- data, from_here
                     if (#rt.order.ol > #self.relevance.dl) or framed then -- NOTE: records store changes per each layer, so this checks if it's effective to do vertical or horizontal search traversal
@@ -100,46 +113,46 @@ return (function ()
                             if rt.order.lo[l] then 
                                 m = rt.records[l] -- we do not use rt.records[e], because it may contain nil, due to "namespace" reservation
                                 fh = (#self.layers == l)
-                                --io.write("found at R:"..l.."\n")
                             break end 
                         end
-                    else -- honestly 2nd (this) method is bugged, and I need to fix it. that's why there is `or true` in if statement
+                    else
                         for o = #rt.order.ol, 1, -1 do -- inverse order, because we pick fresh ones, in order to hit early
                             local l = rt.order.ol[o]
                             if self.relevance.ld[l] then
                                 m = rt.records[l]
                                 fh = (#self.layers == l)
-                                --io.write("found at O:"..l.."\n")
                             break end
                         end
                     end
-                    --::resolved::
                     return m, fh -- Manifest(lua table, that represnts it) and if this info from current layer
                 end,
-                push_layer = function (self, parent, isolated, context) -- adds new layer
+                push_layer = function (self, parent, isolated) -- adds new layer
                     --we make an exception for root layer, because there's nothing to isolate against
                     local not_root = (#self.layers > 0)
                     -- initial layer is preloaded, but I still add it if user decide to pop the root layer and there will be those who would like to do that for the fun of it (hi tsoding)
                     if (not_root and (type(parent) ~= "number")) then error("OPHANIM: FLESH.KES:push_layer - parent<number> expected, got "..type(parent), 2) end -- I also think that root layers should be definable if no parent specified
+                    if (not_root) then
+                        if (parent > #self.layers or parent < 1) then error("parent ID OOR", 2) end
+                        if (self.layers[parent].d > self.layers[#self.layers].d or self.layers[parent].d < 1) then error("parent depth OOR", 2) end
+                    end
                     local l = { -- new layer data
                         d = ((parent and not_root) and self.layers[parent].d or 0) + 1, -- new layer depth
                         h = {r={},i={}}, -- those are hidden layers (r - relevance, i - isolation)
                         s = {a={},e={},r={}}, -- staged entries data: aliases(aka refs), entries and reserved aliases
-                        c = context or {}} -- `c` is Set<reference: Number|String, exist: Boolean> references relvant to this context layer
-                    if (#self.relevance.dl > l.d) then
+                        c = {ob={},bo={}}} -- `c` is BiMap<order: Integer, bind: Integer> references relvant to this context layer
+                    --if (#self.relevance.dl > l.d) then
                         for d = #self.relevance.dl, l.d, -1 do -- exclude all layers between parent and new layer depths via depth
                             l.h.r[#l.h.r+1] = self.relevance.dl[d] -- hide layers (we can ask depth form them directly)
                             bimap_write(self.relevance, "dl", d, nil) -- removing irrelevant layers
                             if self.isolations["do"][d] then -- check if there is isolation
                                 l.h.i[#l.h.i+1] = d -- hide isolations (we can ask depth form them directly)
-                                bimap_write(self.isolations, "do", d, nil) end end end -- removing irrelevant isolations
+                                bimap_write(self.isolations, "do", d, nil) end end-- end -- removing irrelevant isolations
                     self.layers[#self.layers+1] = l
                     bimap_write(self.relevance, "ld", #self.layers, l.d)
                     if isolated then bimap_write(self.isolations, "od", #self.isolations.od+1, l.d) end -- isolated (external binding resolving, causes it to use resolving oblivious to effects from here)
                     return #self.layers -- used if Sequence will define another Sequence
                 end,
                 pop_layer = function (self, frame) -- P.S. while push and pop suggest stack structure, this isn't purely just that due to parent detours
-                    --print("--pop_layer")
                     if (#self.layers <= 0) then error("FLESH.KES:pop_layer - no layers to pop", 2) end
                     local l = self.layers[#self.layers]--; print("layer: "..tostring(#self.layers))
                     local db = self.bindings
@@ -147,23 +160,20 @@ return (function ()
                     local frame_state = {labels = {lb={},bl={}}, bindings = {}}
                     local frame_entry = frame and function (self, b, rt)
                         frame_state.bindings[#frame_state.bindings+1] = {delta = rt.records[#self.layers]}
-                        bimap_write(frame_state.labels, "bl", #frame_state.bindings, self.labels[b])
+                        bimap_write(frame_state.labels, "bl", #frame_state.bindings, self.labels.bl[b])
                     end or function (self, b, rt) end
-                    for b,_ in pairs(self.layers[#self.layers].c) do -- removing references from bindings
+                    for _,b in ipairs(l.c.ob) do -- removing references from bindings
                         local rt = db[b]
                         frame_entry(self, b, rt)
                         rt.records[#self.layers] = nil
-                        --print("removing: `"..(self.labels.bl[b] or "binding:"..b).."` at layer:"..(rt.order.ol[#rt.order.ol] or "UNKNOWN"))
                         if (#self.layers == rt.order.ol[#rt.order.ol]) then
                             bimap_write(rt.order, "lo", #self.layers, nil)
                         else error("KES:pop_layer - invalid layer in unload transaction query. [Z_Z] Currently I'm thinking to keep it as user error or make code for handling this.", 2) end
-                        if #rt.records <= 0 then db[b] = nil; bimap_write(self.labels, "bl", b, nil) end end
+                        if #rt.order.ol <= 0 then db[b] = nil; bimap_write(self.labels, "bl", b, nil) end end
                     if self.isolations["do"][l.d] then bimap_write(self.isolations, "do", l.d, nil) end -- lift isolation sandbox (if there is any)
                     bimap_write(self.relevance, "ld", #self.layers, nil) -- removed layer is irrelevant, removing it
                     local hidden_layers = l.h -- there is always hidden entries
-                    --pprint(l.h)
                     for _,e in ipairs(hidden_layers.r) do -- restoring hidden context relevance
-                        --pprint(hidden_layers.r)
                         bimap_write(self.relevance, "ld", e, self.layers[e].d) end
                     for i = #hidden_layers.i, 1, -1 do -- restoring hidden context isolations
                         bimap_write(self.isolations, "od", #self.isolations.od + 1, hidden_layers.i[i]) end
@@ -189,6 +199,27 @@ return (function ()
                     end
                 end,
                 get_context = function (self) return #self.layers end, -- used by Membranes to memorize context for later use
+                write_entry = function (self, ref, m) -- reference : Number|String, [manifest: Any|Nil]
+                    local db = self.bindings
+                    local c = self.layers[#self.layers].c
+                    local b = (#db + 1)
+                    local order = (#c.ob + 1)
+                    if ref then
+                        if (type(ref) ~= "string") then error("on ref expected string or nil, got "..type(ref), 2) end
+                        b = self.labels.lb[ref] or b
+                        bimap_write(self.labels, "lb", ref, b)
+                    else ref = order end
+                    db[b] = db[b] or { records = {}, order = {ol = {}, lo = {}} }
+                    db[b].records[#self.layers] = m -- note that nil will reserve the place on layer
+                    --TODO: unite the check
+                    if not db[b].order.lo[#self.layers] then -- do we need to add new or just update the binding
+                        bimap_write(db[b].order, "ol", #(db[b].order.ol) + 1, #self.layers)
+                    end
+                    if not c.bo[b] then -- if it's new binding for this context
+                        bimap_write(c, "bo", b, order)
+                    end
+                    return ref
+                end, -- entry writes could only happen in current context
                 stage_resolve_id = function (self, ref) return self.layers[#self.layers].s.a[ref] end,
                 stage_entry = function (self, data, stage_id) -- when `ref` is present, it updates info that references existing entry
                     local stage = self.layers[#self.layers].s
@@ -215,11 +246,16 @@ return (function ()
                     stage.a[new_ref] = stage_id -- label can point only to one place, we don't discourage user from that
                     return stage_id
                 end,
+                --stage_on_change = function (self)
+                --end,
+                stage_staged = function (self)
+                    return #self.layers[#self.layers].s.e
+                end,
                 stage_reserved = function (self)
                     return #self.layers[#self.layers].s.r > 0
                 end,
                 stage_fill_reserve = function (self, data)
-                    --if (data == self.gap_proto) then data = nil end -- somewhat hacky, but good enough for a `gap` check. Native might not like this
+                    if (data == FLESH.NegI.Manifests.gap) then data = nil end -- somewhat hacky, but good enough for a `gap` check. Native might not like this
                     local stage = self.layers[#self.layers].s
                     for _,i in ipairs(stage.r) do self:stage_entry(data, i) end
                     stage.r = {}
@@ -229,44 +265,29 @@ return (function ()
                     --print("\tlayer:"..tostring(#self.layers))
                     --print("\tdepth:"..tostring(self.layers[#self.layers].d))
                     --print("\tisolated:"..tostring(self.isolations["do"][self.layers[#self.layers].d] ~= nil))
-                    --io.write("\tcontent:")
+                    --print("\tcontent:")
                     --pprint(self.layers[#self.layers].s.a)
                     local stage = self.layers[#self.layers].s
                     local wue = true and function (self, e)
+                        print("\t+ <anonymic>")
                         e.b[#e.b+1] = self:write_entry(nil, e.d)
                     end or function (self, e) end
                     for _, e in ipairs(stage.e) do
                         e.b = {}
                         if (#e.a > 0) then for _, name in ipairs(e.a) do
+                            print("\t+ "..name)
                             e.b[#e.b+1] = self:write_entry(name, e.d) end
                         else wue(self, e) end end
                     local output = self.layers[#self.layers].s
-                    self.layers[#self.layers].s = {a={},e={},r={}}
+                    self.layers[#self.layers].s = {a={},e={},r={}} -- a - aliases, e - entries, r - reserve
                     return output -- should be a map of entry -> binding, but for now it's fine
                 end,
-                write_entry = function (self, ref, m) -- reference : Number|String, [manifest: Any|Nil]
-                    --print(tostring(m))
-                    local db = self.bindings
-                    if (type(ref) == "string") then 
-                        bimap_write(self.labels, "lb", ref, self.labels.lb[ref] or (#db + 1))
-                        ref = self.labels.lb[ref] 
-                    else ref = ref or (#db + 1) end -- while it's discouraged to use directly, we provide necessary functionality for user
-                    db[ref] = db[ref] or { records = {}, order = {ol = {}, lo = {}} }
-                    db[ref].records[#self.layers] = m -- note that nil will reserve the place on layer
-                    --TODO: unite the check
-                    if not db[ref].order.lo[#self.layers] then -- do we need to add new or just update the binding
-                        bimap_write(db[ref].order, "ol", #(db[ref].order.ol) + 1, #self.layers)
-                    end
-                    if not self.layers[#self.layers].c[ref] then -- if it's new binding for this context
-                        self.layers[#self.layers].c[ref] = true
-                    end
-                    return ref
-                end, -- entry writes could only happen in current context
                 direct_snapshot = function (self, layer_id, frame_state) -- THIS IS RAW AUTHORITY THAT VOIDS SECURITY GUARANTEES
                     frame_state = frame_state or {labels = {lb={},bl={}}, bindings = {}} -- when provided, pours effects directly
-                    for b,_ in pairs(self.layers[layer_id].c) do
+                    for _,b in ipairs(self.layers[layer_id].c.ob) do
                         frame_state.bindings[#frame_state.bindings+1] = {delta = self.bindings[b].records[#self.layers]}
-                        bimap_write(frame_state.labels, "bl", #frame_state.bindings, self.labels[b]) end
+                        if type(self.labels.bl[b]) == "string" then
+                            bimap_write(frame_state.labels, "bl", #frame_state.bindings, self.labels.bl[b]) end end
                     return frame_state end,
                 inner_snapshot = function (self) -- used in Frame, in order to track writes
                     return self:direct_snapshot(#self.layers)
@@ -285,8 +306,12 @@ return (function ()
                 end,
                 log_bindings = function (self)
                     for b,d in pairs(self.bindings) do
-                        io.write((self.labels[b] or "<binding "..tostring(b)..">")..": ")
-                        pprint(d.records)
+                        io.write((self.labels.bl[b] or "<binding "..tostring(b)..">")..": "..tostring(b).."| ")
+                        for l,_ in pairs(d.records) do
+                            io.write(tostring(l)..",")
+                        end
+                        io.write("\n")
+                        --pprint(d.records)
                     end
                 end,
                 log_layers = function (self)
@@ -296,6 +321,26 @@ return (function ()
                     pprint(self.relevance.dl)
                     io.write("\tisolations: order | depth = ")
                     pprint(self.isolations.od)
+                end,
+                check_integrity = function (self) -- unit test for KES, I think I'll need to improve it more, so others'll know why they blown off their foot
+                    local db = self.bindings
+                    local ls = self.labels
+                    print("==== KES Integrity Info START ====")
+                    for id,layer in pairs(self.layers) do
+                        for o,b in ipairs(layer.c.ob) do
+                            if (not db[b]) then print(string.format("missing %s binding (aka %s) at %d depth %d", b, tostring(ls.bl[b] or "<ANON>"), id, layer.d)) 
+                            elseif (not db[b].order.lo[id]) then print(string.format("missing layer link of %s binding (aka %s) at %d depth %d", b, tostring(ls.bl[b] or "<ANON>"), id, layer.d)) end
+                        end
+                    end
+                    local mdc = 0
+                    for id,bind in pairs(db) do
+                        mdc = mdc + 1
+                        for l,e in pairs(bind.records) do
+                            if (not self.layers[l]) then print(string.format("dangling %s binding (aka %s) at %d depth %s", bind, tostring(ls.bl[bind] or "<ANON>"), l, "???")) end
+                        end
+                    end
+                    if (#db ~= mdc) then print(string.format("binding db have gaps")) end
+                    print("==== KES Integrity Info END ====")
                 end
                 --binding_label_get = function (self, b) return self.labels.bl[b] end, -- Used by Frame to make label list. probably pe replaced by 'pop_layer' Frame return
             },
@@ -332,13 +377,15 @@ return (function ()
                             --print("pass?")
                             local artifact_p = self.NegI.Manifests.Artifact -- currently it's tightly coupled, I'll need to slightly rework this
                             local clause = protocol.pass
-                            if self.capcheck(artifact_p, clause) then return clause.state.artifact(lterm, rterm)
-                                else return self:dispatch(clause, self.make.Frame({self = lterm, arg = rterm})) end
+                            return self.capcheck(artifact_p, clause) and 
+                                (clause.state.artifact(lterm, rterm) or self.NegI.Manifests.gap) or 
+                                self:dispatch(clause, self.make.Frame({self = lterm, arg = rterm}))
                         elseif protocol.get then -- fallback to underlying manifest for an answer
                             --print("get.")
                             local artifact_p = self.NegI.Manifests.Artifact
                             local frame_p = self.NegI.Manifests.Frame
                             local clause = protocol.get
+                            if not clause.state then pprint(clause) end
                             local fabk = self.capcheck(artifact_p, clause) and
                                 (clause.state.artifact(lterm) or self.NegI.Manifests.gap) or self:dispatch(clause, lterm)
                             return self:dispatch(fabk, rterm)
@@ -446,7 +493,10 @@ return (function ()
         
             -- The OPHANIM Substrate
             -- Artifacts MUST use this to interact with the system.
-            FLESH = FLESH, 
+            FLESH = FLESH,
+
+            -- temporarely here for debug purposes
+            pprint = pprint,
         }
 
         FLESH.make.Artifact = function (chunk, chunkname, mode)
@@ -644,7 +694,7 @@ return (function ()
                     ["in"] = capability_check
                 }),
             ["//"] = FLESH.make.Manifest({
-                pass = FLESH.make.Artifact("return function (self, arg) return { protocol = { call = FLESH.make.Artifact(\"return function (self, arg) return arg end\")}} end")},{}),
+                pass = FLESH.make.Artifact("return function (self, arg) return { protocol = { pass = FLESH.make.Artifact(\"return function (self, arg) return arg end\")}} end")},{}),
             pass = FLESH.make.Manifest({ -- TODO: explicitly ends Sequence with appropriate data. monad where first is to where and 2nd is data
                 call = FLESH.make.Artifact([[return function (self, arg)
                     
@@ -700,10 +750,14 @@ return (function ()
                         --delta = {get = FLESH.make.Artifact([[return function (self) end]])},
                         load = {get = FLESH.make.Artifact([[return function (self)
                             local labels, bindings = self.state.labels, self.state.bindings
-                            for i,e in pairs(bindings) do
-                                FLESH.KES:stage_alias(labels.bl[i] or i, FLESH.KES:stage_entry(e.parent and e.parent[e.delta] or e.delta)) -- sometimes, user will want to load Frame inside a Frame.
+                            for b,e in pairs(bindings) do
+                                local sid = FLESH.KES:stage_entry(e.parent and e.parent[e.delta] or e.delta)
+                                --pprint(self.state)
+                                --print("load: "..(labels.bl[b] or "<anonymic "..b..">"))
+                                if (labels.bl[b]) then FLESH.KES:stage_alias(labels.bl[b], sid) end -- sometimes, user will want to load Frame inside a Frame.
                             end
-                        end]])},
+                            return FLESH.NegI.Manifests.gap
+                        end]], "Frame can load get")},
                         ["."] = {ask = FLESH.make.Artifact([[return function (self) --TODO
                             --self.state.labels
                         end]])},
@@ -738,7 +792,7 @@ return (function ()
                         for i,e in ipairs(prods) do
                             e = e or FLESH.NegI.Manifests.gap
                             e = FLESH:dispatch(e); e = e or FLESH.NegI.Manifests.gap -- evaluation
-                            e = FLESH:dispatch(e); e = (e ~= FLESH.NegI.Manifests.gap) and e or nil -- get
+                            e = FLESH:dispatch(e) -- get
                             FLESH.KES:stage_fill_reserve(e)
                             FLESH.KES:commit() end
                         return self.state.creturn and FLESH:dispatch(self.state.creturn) or FLESH.NegI.Manifests.gap
@@ -822,14 +876,6 @@ return (function ()
                         return FLESH:dispatch(lt, rt)
                     end]], "Negotiation get")
             }),
-            same = FLESH.make.Artifact([[return function (self, arg)
-                local frame_p = FLESH.NegI.Manifests.Frame
-                if FLESH.capcheck(frame_p, arg) then
-                    return FLESH.make.Number(FLESH.NegI.Intrinsincs.frame_index(arg.state, 1) == FLESH.NegI.Intrinsincs.frame_index(arg.state, 2))
-                else
-                    return FLESH.make.Error("same: expected Frame, got something else")
-                end
-            end]]),
             Function = FLESH.make.Manifest({},{}),
             Structure = FLESH.make.Manifest({},{}),
             _context = FLESH.make.Manifest({
@@ -1109,6 +1155,7 @@ return (function ()
 
         FLESH.NegI.Intrinsincs = { -- shared code between Manifests for optimization reasons, because these are tightly coupled anyways
             frame_index = function (frame_state, query)
+                pprint(frame_state.bindings)
                 if type(query) == "string" then query = frame_state.labels.lb[query] end
                 local binding = frame_state.bindings[query]
                 return binding and (binding.parent and binding.parent[binding.delta] or binding.delta) or nil
@@ -1165,12 +1212,13 @@ return (function ()
                         protocol = {get = FLESH.make.Artifact([[return function (self)
                             local items = self.state.items
                             local labels = table.create and {lb=table.create(0,#items),bl=table.create(0,#items)} or {lb={},bl={}}
-                            for i,e in ipairs(items) do 
-                                e = FLESH:dispatch(e); e = e or FLESH.NegI.Manifests.gap
-                                e = FLESH:dispatch(e); e = (e ~= FLESH.NegI.Manifests.gap) and e or nil
+                            for i,e in ipairs(items) do
+                                local ststs = FLESH.KES:stage_staged() -- we need to check if there is a load, couldn't come up with a better way
+                                e = FLESH:dispatch(e); e = e or FLESH.NegI.Manifests.gap -- evaluate
+                                e = FLESH:dispatch(e) -- get
                                 if FLESH.KES:stage_reserved() then 
                                     FLESH.KES:stage_fill_reserve(e) else
-                                    FLESH.KES:stage_entry(e) end end
+                                    if ststs == FLESH.KES:stage_staged() then FLESH.KES:stage_entry(e) end end end
                             FLESH.KES:commit() -- this could be used mid Sequence, this emergently allow to shuffle labels around
                             return {
                                 protocol = FLESH.NegI.Manifests.Frame.state,
