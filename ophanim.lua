@@ -1,7 +1,7 @@
 --TODOs:
 -- 1. Host representation. Lua have quite messy syntax and context, we need to nicely wrap this up inside some Manifest or Frame.
 -- 2. Just finish manifests (Especially Error, to check if we getting stuck in halt)
--- 3. Tokens should keep track of current evaluated data by having access to the Host device (like Artifacts do)
+-- 3. Tokens should keep track of current evaluated data by having access to the Host device (like Artifacts do), but here in PoC we just refere to it directly through FISH due to "it's convinient" and "that stuff is depandant on host"
 
 return (function ()
     --Frontend: NegI - Negotiation Interface/Negate Identity (the interface, what is developed, that's the front name)
@@ -70,7 +70,7 @@ return (function ()
             fwd_view[index] = value
             rev_view[value] = index
         end
-        local FLESH
+        local FLESH -- forward declaration, because for now I just need to make it work
         FLESH = { -- stands for "Fixed Local Environment Shared Handles"
             FISH = { -- "Fixed Internal State Holder" - used by particular manifests to pass around some data. Could be avoided via KES, but those values are quite commonly used, so it will influence performance.
                 -- probably reserved for parser tokens, but I might leave that up to Tokens themselves
@@ -126,17 +126,18 @@ return (function ()
                     end
                     return m, fh -- Manifest(lua table, that represnts it) and if this info from current layer
                 end,
-                push_layer = function (self, parent, isolated) -- adds new layer
-                    --we make an exception for root layer, because there's nothing to isolate against
-                    local not_root = (#self.layers > 0)
+                push_layer = function (self, parent_depth, isolated) -- adds new layer
+                    -- we make an exception for root layer, because there's nothing to isolate against
                     -- initial layer is preloaded, but I still add it if user decide to pop the root layer and there will be those who would like to do that for the fun of it (hi tsoding)
-                    if (not_root and (type(parent) ~= "number")) then error("OPHANIM: FLESH.KES:push_layer - parent<number> expected, got "..type(parent), 2) end -- I also think that root layers should be definable if no parent specified
+                    local not_root = (#self.relevance.dl > 0)
+                    --local parent = self.relevance.dl[parent_depth]
                     if (not_root) then
-                        if (parent > #self.layers or parent < 1) then error("parent ID OOR", 2) end
-                        if (self.layers[parent].d > self.layers[#self.layers].d or self.layers[parent].d < 1) then error("parent depth OOR", 2) end
+                        if (type(parent_depth) ~= "number") then error("OPHANIM: FLESH.KES:push_layer - parent_depth<number> expected, got "..type(parent), 2) end -- I also think that root layers should be definable if no parent specified
+                        if (parent_depth > self.layers[#self.layers].d or parent_depth < 1) then error("invalid parent depth", 2) end
+                        --if (not parent) then error("can't find parent", 2) end
                     end
                     local l = { -- new layer data
-                        d = ((parent and not_root) and self.layers[parent].d or 0) + 1, -- new layer depth
+                        d = ((not_root) and parent_depth or 0) + 1, -- new layer depth
                         h = {r={},i={}}, -- those are hidden layers (r - relevance, i - isolation)
                         s = {a={},e={},r={}}, -- staged entries data: aliases(aka refs), entries and reserved aliases
                         c = {ob={},bo={}}} -- `c` is BiMap<order: Integer, bind: Integer> references relvant to this context layer
@@ -185,20 +186,26 @@ return (function ()
                     -- I also not sure if `pass` should keep previous context layer, which this function is implies to do, because `pass` created with explicit data transfer in mind, 
                     -- leaving something in context is implicit data transfer, which should be another explicit thing on it's own  (like snapshot into frames?)
                 end,
-                unquote_parent = function (self, parent) -- get parent of unquotation
-                    local p_depth = (parent and self.layers[parent].d or 0) -- parent depth
+                unquote_parent = function (self, parent_depth) -- get parent of unquotation
+                    local not_root = (#self.relevance.dl > 0)
+                    --local parent = self.relevance.dl[parent_depth]
+                    if (not_root) then
+                        if (type(parent_depth) ~= "number") then error("OPHANIM: FLESH.KES:push_layer - parent_depth<number> expected, got "..type(parent), 2) end -- I also think that root layers should be definable if no parent specified
+                        if (parent_depth > self.layers[#self.layers].d or parent_depth < 1) then error("invalid parent depth", 2) end
+                    end
+                    parent_depth = parent_depth or 0 -- parent depth
                     local iso_depth_i, iso_depth = #self.isolations.od, nil
-                    while ((self.isolations.od[iso_depth_i] or 0) > p_depth) do -- we check if layer definition was outside of isolation. also binary search could be applied here
+                    while ((self.isolations.od[iso_depth_i] or 0) > parent_depth) do -- we check if layer definition was outside of isolation. also binary search could be applied here
                         iso_depth = self.isolations.od[iso_depth_i]
                         iso_depth_i = iso_depth_i - 1 end
                     if (iso_depth) then -- if dynamic defined outside isolation, then it shouldn't consider effect of isolation
-                        return self.relevance.dl[iso_depth - 1] -- find parent of layer outside of isolation
-                        --p_depth = (parent and (self.layers[parent].d) or 0) -- parent depth
+                        return iso_depth - 1 -- find parent of layer outside of isolation
                     else
-                        return #self.layers 
+                        return self.layers[#self.layers].d
                     end
                 end,
-                get_context = function (self) return #self.layers end, -- used by Membranes to memorize context for later use
+                get_context = function (self) return #self.layers end, -- will be probably be deprecated
+                get_depth = function (self) return self.layers[#self.layers].d end, -- used by Membranes to memorize context for later use
                 write_entry = function (self, ref, m) -- reference : Number|String, [manifest: Any|Nil]
                     local db = self.bindings
                     local c = self.layers[#self.layers].c
@@ -542,9 +549,12 @@ return (function ()
 
         FLESH.capcheck = function(self, arg) -- Even through fallbacks, is manifest implements this protocol?
             -- TODO: check protocol in flat form, we need to make sure clauses are reachable, not that there is inside chain some Manifest that satisfy intent.
-            local fail = function () return arg.protocol.get and FLESH.capcheck(self, FLESH:dispatch(arg, nil)) or false end
+            -- TODO: rework `pass` clause into argumentless `proxy_start` and `proxy_end`, argument makes it unpredictable. 
+
             if self.state == arg.protocol then return true
             elseif self.state and arg.protocol then
+                local protobuff = {}
+                local fail = function () return arg.protocol.get and FLESH.capcheck(self, FLESH:dispatch(arg, nil)) or false end
                 for i,e in pairs(self.state) do
                     if (arg.protocol[i] ~= e) then
                         return fail() end end
@@ -658,15 +668,7 @@ return (function ()
             Manifest = FLESH.make.Manifest({ -- Protocol for directly constructing Manifests
                 can = {
                     ["in"] = {call = capability_check}, -- capability_check is shared artifact 
-                    ["="] = {call = FLESH.make.Artifact([[return function (self, arg) 
-                        
-                        --we take Frame from arg
-                        --make manifest for the KES with actual lua tables
-                        --store it inside KES (of course)
-                        --add lua metatable so I won't have to chain KES accesses
-                        --return new manifest's reference
-
-                    end]])},
+                    ["="] = {call = FLESH.make.Artifact([[return function (self, arg) end]])},
                     },
                 },{}),-- thats "any" type, there's nothing to check, because everything is a Manifest
             ManifestMeta = FLESH.make.Manifest({ -- Protocol for Manifest Inspection/Reflection
@@ -677,9 +679,10 @@ return (function ()
                 },{
                     can = {
                         ["=="] = {call = FLESH.make.Artifact([[return function (self, arg) 
-                            return FLESH.make.Number(rawequal(self.state, arg) == true) -- self.state have arg from `=` with both protocol and state
+                            return FLESH.make.Number(rawequal(self.state.protocol, arg.protocol) == true) and -- we check protocol and state separately, because table that holds these, don't provide the identity 
+                                FLESH.make.Number(rawequal(self.state.state, arg.state) == true) -- self.state have arg from `=` with both protocol and state
                         end]], "ManifestMeta can == call")},
-                        --protocol = {get = FLESH.make.Artifact([[return function (self) end]], "ManifestMeta can protocol get")}, -- I'll need complex traversal logic for table -> Frame
+                        protocol = {get = FLESH.make.Artifact([[return function (self) return FLESH.make.Manifest( FLESH.NegI.Manifests.Protocol.state , self.state.protocol ) end]], "ManifestMeta can protocol get")},
                         state = {get = FLESH.make.Artifact([[return function (self) return FLESH.make.Manifest(FLESH.NegI.Manifests.Native.state, self.state.state) end]], "ManifestMeta can state get")}, -- it is opaque, so Native it is
                         back = {get = FLESH.make.Artifact([[return function (self) return self.state end]], "ManifestMeta can back get")}, -- not sure about it
                     }
@@ -709,16 +712,69 @@ return (function ()
                     ["in"] = {call = capability_check},
                     ["="] = {call = FLESH.make.Artifact([[return function (self, arg) end]])}
                 }},{
-                    can = {},
-                    call = "stub"
+                    can = {
+                        ["+"] = {call = FLESH.make.Artifact([[return function (self, arg)
+                            local num_p = FLESH.NegI.Manifests.Number
+                            if (FLESH.capcheck(num_p, arg) and arg) then
+                                return FLESH.make.Number(self.state + arg.state) end
+                            return FLESH.make.Error("Number can + call: expected number, got something else")
+                        end]], "Number can + call")},
+                        ["-"] = {call = FLESH.make.Artifact([[return function (self, arg) 
+                            local num_p = FLESH.NegI.Manifests.Number
+                            if (FLESH.capcheck(num_p, arg) and arg) then
+                                return FLESH.make.Number(self.state - arg.state) end
+                            return FLESH.make.Error("Number can + call: expected number, got something else")
+                        end]], "Number can - call")},
+                        ["*"] = {call = FLESH.make.Artifact([[return function (self, arg) 
+                            local num_p = FLESH.NegI.Manifests.Number
+                            if (FLESH.capcheck(num_p, arg) and arg) then
+                                return FLESH.make.Number(self.state * arg.state) end
+                            return FLESH.make.Error("Number can + call: expected number, got something else")
+                        end]], "Number can * call")},
+                        ["/"] = {call = FLESH.make.Artifact([[return function (self, arg) 
+                            local num_p = FLESH.NegI.Manifests.Number
+                            if (FLESH.capcheck(num_p, arg) and arg) then
+                                return FLESH.make.Number(self.state / arg.state) end
+                            return FLESH.make.Error("Number can + call: expected number, got something else")
+                        end]], "Number can / call")},
+                        ["<>"] = {call = FLESH.make.Artifact([[return function (self, arg) 
+                            local num_p = FLESH.NegI.Manifests.Number
+                            if (FLESH.capcheck(num_p, arg) and arg) then
+                                return FLESH.make.Number(
+                                    self.state == arg.state and 0 or 
+                                    self.state < arg.state and 1 or -1) end
+                            return FLESH.make.Error("Number can + call: expected number, got something else")
+                        end]], "Number can <> call")},
+                    },
                 }), -- need to make generic host agnostic number representation (maybe even Rational out of 2 BigIntegers or just BigInteger to not conflate these 2 for the compilation process)
             String = FLESH.make.Manifest({
                 can = {
                     ["in"] = {call = capability_check},
                     ["="] = {call = FLESH.make.Artifact([[return function (self, arg) end]])}
                 }},{
-                    can = {},
-                    call = "stub"
+                    can = {
+                        length = {get = FLESH.make.Artifact("return function (self, arg) return FLESH.make.Number(#self.state) end")}
+                    },
+                    call = FLESH.make.Artifact([[return function (self, arg)
+                        local num_p = FLESH.NegI.Manifests.Number
+                        local frame_p = FLESH.NegI.Manifests.Frame
+                        if (FLESH.capcheck(num_p, arg)) then
+                            return FLESH.make.String(self.state:sub(arg.state,arg.state))
+                        elseif (FLESH.capcheck(frame_p, arg)) then -- slicing in python style
+                            local s_start = FLESH.NegI.Intrinsics.frame_index(arg.state, "start") or FLESH.NegI.Intrinsics.frame_index(arg.state, 1)
+                            local s_end = FLESH.NegI.Intrinsics.frame_index(arg.state, "end") or FLESH.NegI.Intrinsics.frame_index(arg.state, 2)
+                            if (s_start) then if (not FLESH.capcheck(num_p, s_start)) then 
+                                return FLESH.make.Error("String call: expected number in frame at `start` or 1, got something else")
+                            end else
+                                return FLESH.make.Error("String call: expected number in frame at `start` or 1, got something else")
+                            end
+                            if (s_end) then if (not FLESH.capcheck(num_p, s_end)) then 
+                                return FLESH.make.Error("String call: expected number or gap in frame at `end` or 2, got something else")
+                            end end
+                            return FLESH.make.String(self.state:sub(s_start,s_end or s_start))
+                        end
+                        return FLESH.make.Error("String call: expected frame or number, got something else")
+                    end]], "String call")
                 }), -- some hosts might have to emulate this
             Label = FLESH.make.Manifest({ -- it's job is to represent a get query from KES to load manifests
                 can = {
@@ -762,6 +818,8 @@ return (function ()
                         ["."] = {ask = FLESH.make.Artifact([[return function (self) --TODO
                             --self.state.labels
                         end]])},
+                        map = {pass = FLESH.make.Artifact([[return function (self, arg) end]])},
+                        concetrate = {pass = FLESH.make.Artifact([[return function (self, arg) end]])},
                     },
                     call = FLESH.make.Artifact([[return function (self, arg) 
                         local num_p = FLESH.NegI.Manifests.Number
@@ -805,18 +863,18 @@ return (function ()
                     ["="] = {call = FLESH.make.Artifact([[return function (self, arg) end]])}
                 }
             },{
-                --get = FLESH.make.Artifact([[return function (self)
-                --    local parent = self.state.quoted and FLESH.KES:unquote_parent(self.state.parent) or self.state.parent
-                --    FLESH.KES:push_layer(parent, self.state.contain)
-                --    --print("current: "..FLESH.KES:get_context()..", parent: "..parent)
-                --    local output = FLESH:dispatch(self.state.content or FLESH.NegI.Manifests.gap)
-                --    FLESH.KES:pop_layer()
-                --    return output
-                --end]], "Membrane get"),
+                get = FLESH.make.Artifact([[return function (self) -- I'm not sure if that's the right way, but anyways, if it's working - it works
+                    local d = (self.state.parent > FLESH.KES:get_depth()) and FLESH.KES:get_depth() or self.state.parent
+                    return FLESH.make.Manifest(FLESH.NegI.Manifests.Membrane.state, {
+                            parent = d,
+                            contain = self.state.contain,
+                            quoted = self.state.quoted,
+                            content = self.state.content})
+                end]]),
                 pass = FLESH.make.Artifact([[return function (self, arg)
-                    local parent = self.state.quoted and FLESH.KES:unquote_parent(self.state.parent) or self.state.parent
-                    FLESH.KES:push_layer(parent, self.state.contain)
-                    --print("current: "..FLESH.KES:get_context()..", parent: "..parent)
+                    local d = (self.state.parent > FLESH.KES:get_depth()) and FLESH.KES:get_depth() or self.state.parent
+                    d = self.state.quoted and FLESH.KES:unquote_parent(d) or d
+                    FLESH.KES:push_layer(d, self.state.contain)
                     local output = FLESH:dispatch(self.state.content or FLESH.NegI.Manifests.gap, arg or FLESH.NegI.Manifests.gap)
                     FLESH.KES:pop_layer()
                     return output
@@ -830,11 +888,12 @@ return (function ()
             },{
                 get = FLESH.make.Artifact([[return function (self)
                     if self.state then
-                        FLESH.KES:push_layer(FLESH.KES:get_context())
+                        local d = FLESH.KES:get_depth()
+                        FLESH.KES:push_layer(d)
                         local e = FLESH:dispatch(self.state)
                         FLESH.KES:pop_layer()
                         return FLESH.make.Manifest(FLESH.NegI.Manifests.Membrane.state, {
-                            parent = FLESH.KES:get_context(),
+                            parent = d,
                             contain = false,
                             quoted = false,
                             content = e})
@@ -849,7 +908,7 @@ return (function ()
             },{
                 get = FLESH.make.Artifact([[return function (self)
                     return FLESH.make.Manifest(FLESH.NegI.Manifests.Membrane.state, {
-                        parent = FLESH.KES:get_context(),
+                        parent = FLESH.KES:get_depth(),
                         contain = false,
                         quoted = true,
                         content = self.state})
@@ -863,12 +922,13 @@ return (function ()
             },{
                 get = FLESH.make.Artifact([[return function (self)
                     if self.state then
-                        FLESH.KES:push_layer(FLESH.KES:get_context(), true)
+                        local d = FLESH.KES:get_depth()
+                        FLESH.KES:push_layer(d, true)
                         local e = FLESH:dispatch(self.state)
                         FLESH.KES:pop_layer()
                         return FLESH.make.Manifest(FLESH.NegI.Manifests.Membrane.state, {
-                            parent = FLESH.KES:get_context(),
-                            contain = false,
+                            parent = d,
+                            contain = true,
                             quoted = false,
                             content = e})
                     else return FLESH.NegI.Manifests.gap end
@@ -889,20 +949,30 @@ return (function ()
             }),
             Function = FLESH.make.Manifest({},{}),
             Structure = FLESH.make.Manifest({},{}),
-            _context = FLESH.make.Manifest({
-                can = { -- TODO: investigate dropped dispatch
+            context = FLESH.make.Manifest({
+                can = {
                     inner = {get = FLESH.make.Artifact([[return function (self) return FLESH.make.Manifest(FLESH.NegI.Manifests.Frame.state, FLESH.KES:inner_snapshot()) end]])},
                     outer = {get = FLESH.make.Artifact([[return function (self) return FLESH.make.Manifest(FLESH.NegI.Manifests.Frame.state, FLESH.KES:view_snapshot(true)) end]])},
                     full = {get = FLESH.make.Artifact([[return function (self) return FLESH.make.Manifest(FLESH.NegI.Manifests.Frame.state, FLESH.KES:view_snapshot(false)) end]])},
                 }
-            },{}), -- not sure about naming
-            --Parser = {} -- I need to understand how should I make it, so the user can modify the axioms it uses 
+            },{}), 
+            Parser = FLESH.make.Manifest({
+                ["in"] = {call = capability_check},
+                ["="] = {call = FLESH.make.Artifact([[return function (self, arg) end]])}
+            },{
+                can = {
+                    nodes = {get = FLESH.make.Artifact([[return function (self) end]])} -- get Frame with responsible manifests
+                },
+                call = FLESH.make.Artifact([[return function (self, arg) end]]) -- evaluate
+            })
+
+             -- I need to understand how should I make it, so the user can modify the axioms it uses 
         }
         FLESH.make.unthunk()
 
         FLESH.Host = {}
         FLESH.Host.Types = { -- while it's a mapping table, OPHANIM fundamentally disagree with lua on type existance, so for example userdata can't be capchecked
-            ["nil"] = FLESH.make.Manifest({},{}),
+            ["nil"] = FLESH.NegI.Manifests.gap,
             boolean = FLESH.make.Manifest({
                     can = {
                         ["in"] = {call = capability_check},
@@ -1202,7 +1272,7 @@ return (function ()
                 return FLESH.make.Manifest(FLESH.NegI.Token.state,{})
             end
 
-            -- Internal AST node creators (for parser output)
+            -- Internal AST node creators (for parser output, I should also softcode this for evaluation reinterpretation)
             local AST = { -- refactoring the Sequence generator for parser
                 GAP = function () 
                     return FLESH.NegI.Manifests.gap -- we don't have anything on here
@@ -1225,7 +1295,7 @@ return (function ()
                             local items = self.state.items
                             local labels = table.create and {lb=table.create(0,#items),bl=table.create(0,#items)} or {lb={},bl={}}
                             for i,e in ipairs(items) do
-                                local ststs = FLESH.KES:stage_staged() -- we need to check if there is a load, couldn't come up with a better way
+                                local ststs = FLESH.KES:stage_staged() -- we need to check if there is a `load`, couldn't come up with a better way
                                 e = FLESH:dispatch(e); e = e or FLESH.NegI.Manifests.gap -- evaluate
                                 e = FLESH:dispatch(e) -- get
                                 if FLESH.KES:stage_reserved() then 
@@ -1508,6 +1578,10 @@ return (function ()
                     call = nil, -- not found appropriate Label in can, do it if there is negotiation
                     get = nil, -- not found appropriate Label in can, do it anyways with (if no call) or without negotioation. this rule exist to describle labels
                     ask = nil, -- default case for "can", can work with call but it's heavily advised to not use with call, otherwise it will cause confusion)
+                    pass = { -- executes, when explicitly not asked for `get`. not sure how do I call this: `pass`, `proxy`, `wrap`
+                        start = nil, -- `start` or `get`, prepares environment and returns the proxied manifest in question
+                        ["end"] = nil -- `end` or `clear`, revert changes it did at `start`
+                    }
                 },
                 state = { -- internal state of manifest, could only be used by protocol it's bundled with.
             
