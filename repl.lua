@@ -23,10 +23,10 @@ local labeling_test = function ()
 end
 
 print("LOADING=========================================================")
-pprint(contain_test())
-pprint(quote_test())
-pprint(grounding_test())
-pprint(labeling_test())
+--pprint(contain_test())
+--pprint(quote_test())
+--pprint(grounding_test())
+--pprint(labeling_test())
 print("NegI REPL v0.0.1 (Pre-Alpha)====================================")
 
 OState.KES:write_entry("REPL", OState.make.Manifest({ -- we describle REPL authority here, instead of using arbitrary commands

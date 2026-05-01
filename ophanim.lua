@@ -352,59 +352,45 @@ return (function ()
                 end
                 --binding_label_get = function (self, b) return self.labels.bl[b] end, -- Used by Frame to make label list. probably pe replaced by 'pop_layer' Frame return
             },
+            do_action = function (self, action, lt, rt) -- make sure to remeber right: clause is case of protocol, action is the manifest about to be executed
+                return (action and lt) and ((self.capcheck(self.NegI.Manifests.Artifact, action) and -- currently it's tightly coupled, I'll need to slightly rework this
+                    action.state.artifact(lt, rt) or
+                    self:dispatch(action, rt and self.make.Frame({self = lt, arg = rt}) or lt)) or
+                    self.NegI.Manifests.gap) or self.NegI.Manifests.gap
+            end,
             dispatch = function (self, lterm, rterm, protocol) -- needs debugging
                 --print("dispatch start")
                 if lterm == nil then error("FLESH:dispatch - got nil, expected Manifest") return end
                 protocol = protocol or lterm.protocol -- protocol argument is optional and here only for convinience, so I don't have to recreate manifest with transformed protocols
                 if protocol then
                     if rterm then
-                        
-                        if protocol.can then -- both "can" and "ask" may not be fulfilled unlike "can" or "get" or abscense of protocol clauses
+                        if protocol.can then -- both "can" and "ask" may not be fulfilled unlike "can" or "get" or abscense of protocol actions
                             --print("can?")
                             local label_p = self.NegI.Manifests.Label -- we use direct access, because this stuff will depend on furst record anyways
                             if self.capcheck(label_p, rterm) then
                                 local p = protocol.can[rterm.state.name]
-                                if p then return {protocol = p, state = lterm.state} end end end -- if we don't have clause, we should fall down to `ask`
-                        if protocol.ask then -- `ask` clause exist solely for cases when Manifest need to handle arbitrary labels, like vector axis swizzling, field "modification" (the field might be abscent) and etc
+                                if p then return {protocol = p, state = lterm.state} end end end -- if we don't have action, we should fall down to `ask`
+                        if protocol.ask then -- `ask` action exist solely for cases when Manifest need to handle arbitrary labels, like vector axis swizzling, field "modification" (the field might be abscent) and etc
                             --print("ask?")
-                            local artifact_p = self.NegI.Manifests.Artifact -- currently it's tightly coupled, I'll need to slightly rework this
                             local label_p = self.NegI.Manifests.Label
-                            local clause = protocol.ask
-                            if self.capcheck(label_p, rterm) then if self.capcheck(artifact_p, clause) then return clause.state.artifact(lterm, rterm)
-                                else return self:dispatch(clause, self.make.Frame({self = lterm, arg = rterm})) end end end
+                            if self.capcheck(label_p, rterm) then self:do_action(protocol.ask, lterm, rterm) end end
                         if protocol.call then
                             --print("call?")
                             if rterm.protocol and rterm.protocol.get then rterm = self:dispatch(rterm, nil) end -- passive evaluation, because caller expect contents
-                            local artifact_p = self.NegI.Manifests.Artifact
-                            local frame_p = self.NegI.Manifests.Frame
-                            local clause = protocol.call
-                            return self.capcheck(artifact_p, clause) and
-                                (clause.state.artifact(lterm, rterm) or self.NegI.Manifests.gap) or
-                                self:dispatch(clause, self.make.Frame({self = lterm, arg = rterm})) -- needs some standartization on how this should be passed around, don't like hardcoded "self" and "arg"
-                        elseif protocol.pass then -- when sole protocol existance is to pass negotiation along with some caveats
+                            return self:do_action(protocol.call, lterm, rterm) -- needs some standartization on how this should be passed around, don't like hardcoded "self" and "arg"
+                        elseif protocol.pass and protocol.pass.enter then -- when sole protocol existance is to pass negotiation along with some caveats
                             --print("pass?")
-                            local artifact_p = self.NegI.Manifests.Artifact -- currently it's tightly coupled, I'll need to slightly rework this
-                            local clause = protocol.pass
-                            return self.capcheck(artifact_p, clause) and 
-                                (clause.state.artifact(lterm, rterm) or self.NegI.Manifests.gap) or 
-                                self:dispatch(clause, self.make.Frame({self = lterm, arg = rterm}))
-                        elseif protocol.get then -- fallback to underlying manifest for an answer
+                            local result = self:dispatch(self:do_action(protocol.pass.enter, lterm), rterm) -- decorative proxy
+                            if protocol.pass.exit then self:do_action(protocol.pass.exit, lterm) end -- transformative proxy
+                            return result
+                        end
+                        if protocol.get then -- fallback to underlying manifest for an answer
                             --print("get.")
-                            local artifact_p = self.NegI.Manifests.Artifact
-                            local frame_p = self.NegI.Manifests.Frame
-                            local clause = protocol.get
-                            --if not clause.state then pprint(clause) end
-                            local fabk = self.capcheck(artifact_p, clause) and
-                                (clause.state.artifact(lterm) or self.NegI.Manifests.gap) or self:dispatch(clause, lterm)
-                            return self:dispatch(fabk, rterm)
+                            return self:dispatch(self:do_action(protocol.get, lterm), rterm)
                         else return self.make.Error("OPHANIM: FLESH:dispatch Error: rterm is outside of lterm protocol capability") end
                     elseif protocol.get then
                         --print("get explicit.")
-                        local artifact_p = self.NegI.Manifests.Artifact
-                        local clause = protocol.get
-                        if self.capcheck(artifact_p, clause) then
-                            return clause.state.artifact(lterm) or self.NegI.Manifests.gap
-                        else return self:dispatch(clause, lterm) end
+                        return self:do_action(protocol.get, lterm)
                     else return lterm end
                 elseif rterm then return self.make.Error("OPHANIM: FLESH:dispatch Error: missing protocol")
                 else return lterm end
@@ -553,18 +539,61 @@ return (function ()
 
             if self.state == arg.protocol then return true
             elseif self.state and arg.protocol then
-                local protobuff = {}
-                local fail = function () return arg.protocol.get and FLESH.capcheck(self, FLESH:dispatch(arg, nil)) or false end
-                for i,e in pairs(self.state) do
-                    if (arg.protocol[i] ~= e) then
-                        return fail() end end
-                if self.state.can == arg.protocol.can then return true
-                elseif self.state.can and arg.protocol.can then
-                    for i,e in pairs(self.state.can) do
-                        if (arg.protocol.can[i] ~= e) then
-                            return fail() end end 
-            end end
-            return true end
+                
+                local scout = function (checkrefs, arg)
+                    local argp = arg.protocol
+                    local can_matches = {}
+
+                    if (checkrefs.can and checkrefs.can ~= argp.can) then
+                        for c,a in pairs(can_matches) do
+                            if argp.can[c] ~= a then 
+                                
+                                can_matches[c] = a 
+                            end -- we stick to simplicity for now
+                        end end
+
+                    checkrefs = {
+                        can = (#can_matches > 0) and can_matches,
+                        ask = (checkrefs.ask ~= argp.ask) and checkrefs.ask,
+                        call = (checkrefs.call ~= argp.call) and checkrefs.call,
+                        --pass = (checkrefs.pass.enter or argp.pass.enter or checkrefs.pass.exit ~= argp.pass.exit) and checkrefs.pass,
+                        --get = (checkrefs.get ~= argp.get) and checkrefs.get,
+                    }
+                    if #checkrefs > 0 then
+                        if argp.pass then -- what if the protocol we checking against also have `pass`?
+                            local m = scout(checkrefs, FLESH:do_action(argp.pass.enter, arg))
+                            FLESH:do_action(argp.pass.exit, arg)
+                            return m end 
+                        if argp.get then return scout(checkrefs, FLESH:do_action(argp.get, arg)) end -- what if the protocol we checking against also have `get`?
+                        return false
+                    else
+                        return true
+                    end
+                end
+
+                return scout({
+                    can = self.state.can,
+                    ask = self.state.ask,
+                    call = self.state.call,
+                    --pass = self.state.pass, -- decorators and transformatives goes beyond checking
+                    --get = self.state.get
+                },arg) 
+            else
+                return false
+            end
+
+            --    local fail = function () return (arg.protocol.get or ) and FLESH.capcheck(self, FLESH:dispatch(arg, nil)) or false end
+            --    for i,e in pairs(self.state) do
+            --        if (arg.protocol[i] ~= e) then
+            --            return fail() end end
+            --    if self.state.can == arg.protocol.can then return true
+            --    elseif self.state.can and arg.protocol.can then
+            --        for i,e in pairs(self.state.can) do
+            --            if (arg.protocol.can[i] ~= e) then
+            --                return fail() end end 
+            --end end
+            return true 
+        end
 
         --common between protocol manifests
         local capability_check = FLESH.make.Artifact([[return function (self, arg)
@@ -629,6 +658,21 @@ return (function ()
                 return -- Error manifest
             end]])
         end
+
+        FLESH.NegI.Assets = {
+            ThePasser = FLESH.make.Artifact("return function (self, arg) return arg end", "ThePasser call")
+        }
+
+        FLESH.NegI.Intrinsincs = { -- shared code between Manifests for optimization reasons, because these are tightly coupled anyways
+            frame_index = function (frame_state, query)
+                --pprint(frame_state.bindings)
+                if type(query) == "string" then query = frame_state.labels.lb[query] end
+                if type(query) ~= "number" then error("expected number or string", 2) end
+                local binding = frame_state.bindings[query]
+                return binding and (binding.parent and binding.parent[binding.delta] or binding.delta) or nil
+            end,
+            the_passer = function (self, arg) return arg end
+        }
 
         FLESH.NegI.Manifests = { -- this is the core shared interface (or "corelib" if you'd like to call it like that), the abstract foundation for any logic that will come next. TODO: I need to move NegI protocols inside of it
             Native = FLESH.make.Manifest({ -- should represent state during introspection, to make it hostile
@@ -784,9 +828,7 @@ return (function ()
                     can = {
                         [":"] = {get = FLESH.make.Artifact([[return function (self)
                             FLESH.KES:stage_alias(self.state.name)
-                            return {
-                                protocol = { pass = FLESH.make.Artifact("return function (self, arg) return arg end")},
-                                state = self.state.name }end]])},
+                            return FLESH.make.Manifest({ pass = {enter = FLESH.NegI.Assets.ThePasser}},{}) end]])},
                         ["name"] = {get = FLESH.make.Artifact([[return function (self)
                             return FLESH.make.String(self.state.name)
                         end]])},
@@ -818,8 +860,8 @@ return (function ()
                         ["."] = {ask = FLESH.make.Artifact([[return function (self) --TODO
                             --self.state.labels
                         end]])},
-                        map = {pass = FLESH.make.Artifact([[return function (self, arg) end]])},
-                        concetrate = {pass = FLESH.make.Artifact([[return function (self, arg) end]])},
+                        map = {pass = {enter = FLESH.make.Artifact([[return function (self) end]])}},
+                        concetrate = {pass = {enter = FLESH.make.Artifact([[return function (self) end]])}},
                     },
                     call = FLESH.make.Artifact([[return function (self, arg) 
                         local num_p = FLESH.NegI.Manifests.Number
@@ -871,14 +913,15 @@ return (function ()
                             quoted = self.state.quoted,
                             content = self.state.content})
                 end]]),
-                pass = FLESH.make.Artifact([[return function (self, arg)
-                    local d = (self.state.parent > FLESH.KES:get_depth()) and FLESH.KES:get_depth() or self.state.parent
-                    d = self.state.quoted and FLESH.KES:unquote_parent(d) or d
-                    FLESH.KES:push_layer(d, self.state.contain)
-                    local output = FLESH:dispatch(self.state.content or FLESH.NegI.Manifests.gap, arg or FLESH.NegI.Manifests.gap)
-                    FLESH.KES:pop_layer()
-                    return output
-                end]], "Membrane pass")
+                pass = { 
+                    enter = FLESH.make.Artifact([[return function (self)
+                        local d = (self.state.parent > FLESH.KES:get_depth()) and FLESH.KES:get_depth() or self.state.parent
+                        d = self.state.quoted and FLESH.KES:unquote_parent(d) or d
+                        FLESH.KES:push_layer(d, self.state.contain)
+                        return self.state.content or FLESH.NegI.Manifests.gap
+                    end]], "Membrane pass enter"),
+                    exit = FLESH.make.Artifact([[return function (self) FLESH.KES:pop_layer() end]], "Membrane pass exit")
+                }
             }), -- I think I should make distinction between Membranes, though parent Manifest with inherited capabilities will be here
             Make = FLESH.make.Manifest({ -- aka [] or grounded (because push_layer will be grounded by default)
                 can = {
@@ -1234,16 +1277,6 @@ return (function ()
         xpcall -- Host
         ]]
 
-        FLESH.NegI.Intrinsincs = { -- shared code between Manifests for optimization reasons, because these are tightly coupled anyways
-            frame_index = function (frame_state, query)
-                --pprint(frame_state.bindings)
-                if type(query) == "string" then query = frame_state.labels.lb[query] end
-                if type(query) ~= "number" then error("expected number or string", 2) end
-                local binding = frame_state.bindings[query]
-                return binding and (binding.parent and binding.parent[binding.delta] or binding.delta) or nil
-            end,
-        }
-
         FLESH.KES:write_entry("NegI", FLESH.make.Frame(FLESH.NegI.Manifests))
 
         FLESH.NegI.parse = (function ()
@@ -1578,10 +1611,12 @@ return (function ()
                     call = nil, -- not found appropriate Label in can, do it if there is negotiation
                     get = nil, -- not found appropriate Label in can, do it anyways with (if no call) or without negotioation. this rule exist to describle labels
                     ask = nil, -- default case for "can", can work with call but it's heavily advised to not use with call, otherwise it will cause confusion)
-                    pass = { -- executes, when explicitly not asked for `get`. not sure how do I call this: `pass`, `proxy`, `wrap`
-                        start = nil, -- `start` or `get`, prepares environment and returns the proxied manifest in question
-                        ["end"] = nil -- `end` or `clear`, revert changes it did at `start`
-                    }
+                    pass = { -- executes, when explicitly not asked for `get`. not sure how do I name this: `pass`, `proxy`, `wrap`
+                        enter = nil, -- `start` or `get` or `setup`, prepares environment and returns the proxied manifest in question
+                        exit = nil -- `end` or `clear`, revert changes it did at `start`
+                    },
+                    --handoff = nil, -- triggers on layer ownership transfer (I think I should leave that up to KES)
+
                 },
                 state = { -- internal state of manifest, could only be used by protocol it's bundled with.
             
