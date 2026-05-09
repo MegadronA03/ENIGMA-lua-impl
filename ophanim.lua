@@ -7,13 +7,12 @@ return (function ()
     --Frontend: NegI - Negotiation Interface/Negate Identity (the interface, what is developed, that's the front name)
     --Backend: OPHANIM - Ontological Polymorphic Host for Authority and Negotiation Interface Management (the substrate, NegI implementation)
     local pprint = require("pprint") -- remove after fixing problems
-    --local ldbg = require("lua_utils/debugger")
+    local ldbg = require("lua_utils/debugger")
     --local ltr = require("luatrace") -- remove after fixing problems
     -- This works more or less as ship of thesus, OPHANIM provides common interfaces for other manifests to communicate with each other in platform agnostic way
     local newstate = function () -- something similar to lua_newstate but for OPHANIM
         local new_conv = function (c, ...) --helps chaining like resolve_chain("salt")(4)(5)(1).r
-            local h = {c = c,r = {...}}
-            setmetatable(h, {
+            local h = setmetatable({c = c,r = {...}}, {
                 __call = function (self, ...)
                     return new_conv(c, c(...))
                 end })
@@ -356,6 +355,25 @@ return (function ()
                 end
                 --binding_label_get = function (self, b) return self.labels.bl[b] end, -- Used by Frame to make label list. probably pe replaced by 'pop_layer' Frame return
             },
+            ESC = { -- Escapee Search Container
+                view = setmetatable({}, { __mode = "k" }),
+                start = function(self, err_handler, fn, ...)
+                    local ok, result = pcall(fn, ...)
+                    if ok then return result end
+                    -- result is the error thrown; if it's a registered signal, call it
+                    if self.view[result] then
+                        self.view[result] = nil   -- consume
+                        return result() end            -- call the callback (result itself)
+
+                    if err_handler then
+                        return err_handler(result) else
+                        error(result, 0) end   -- real error
+                end,
+                shift = function(self, closure)
+                    self.view[closure] = true    -- register as a signal
+                    error(closure)               -- throw it
+                end,
+            },
             do_action = function (self, action, lt, rt) -- make sure to remeber right: clause is case of protocol, action is the manifest about to be executed
                 if not (action and lt) then return self.NegI.Manifests.gap end
                 local r
@@ -592,7 +610,7 @@ return (function ()
 
             -- temporarely here for debug purposes
             pprint = pprint,
-            --ldbg = ldbg,
+            ldbg = ldbg,
         }
 
         FLESH.make.Artifact = function (chunk, chunkname, mode)
