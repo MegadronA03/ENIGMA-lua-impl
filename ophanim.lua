@@ -12,8 +12,7 @@ return (function ()
     -- This works more or less as ship of thesus, OPHANIM provides common interfaces for other manifests to communicate with each other in platform agnostic way
     local newstate = function () -- something similar to lua_newstate but for OPHANIM
         local new_conv = function (c, ...) --helps chaining like resolve_chain("salt")(4)(5)(1).r
-            local h = {c = c,r = {...}}
-            setmetatable(h, {
+            local h = setmetatable({c = c,r = {...}}, {
                 __call = function (self, ...)
                     return new_conv(c, c(...))
                 end })
@@ -356,6 +355,27 @@ return (function ()
                 end
                 --binding_label_get = function (self, b) return self.labels.bl[b] end, -- Used by Frame to make label list. probably pe replaced by 'pop_layer' Frame return
             },
+            ESC = { -- Escapee Search Container
+                view = setmetatable({}, { __mode = "k" }),
+                start = function(self, err_handler, fn, ...) -- I need to reference KES. the KES on it's own is already big enough, I'm not sure it belongs there, but I'm sure it should do layer unwinding
+                    local lid = FLESH.KES:get_context()
+                    local ok, result = pcall(fn, ...)
+                    if ok then return result end
+                    while lid < FLESH.KES:get_context() do FLESH.KES:pop_layer() end -- rework into checkpoint and revert system, currently it's slow performance wise
+                    -- result is the error thrown; if it's a registered signal, call it
+                    if self.view[result] then
+                        self.view[result] = nil   -- consume
+                        return result() end            -- call the callback (result itself)
+
+                    if err_handler then
+                        return err_handler(result) else
+                        error(result, 0) end   -- real error
+                end,
+                shift = function(self, closure)
+                    self.view[closure] = true    -- register as a signal
+                    error(closure)               -- throw it
+                end,
+            },
             do_action = function (self, action, lt, rt) -- make sure to remeber right: clause is case of protocol, action is the manifest about to be executed
                 if not (action and lt) then return self.NegI.Manifests.gap end
                 local r
@@ -445,8 +465,6 @@ return (function ()
                             end
                         end
 
-
-                        
                         intent = {
                             can = (map_has_items(can_matches)) and can_matches,
                             ask = (intent.ask ~= argp.ask) and intent.ask,
@@ -592,7 +610,7 @@ return (function ()
 
             -- temporarely here for debug purposes
             pprint = pprint,
-            --ldbg = ldbg,
+            ldbg = ldbg,
         }
 
         FLESH.make.Artifact = function (chunk, chunkname, mode)
@@ -1368,7 +1386,7 @@ return (function ()
                                 local ststs = FLESH.KES:stage_staged() -- we need to check if there is a `load`, couldn't come up with a better way
                                 e = FLESH:dispatch(e); e = e or FLESH.NegI.Manifests.gap -- evaluate
                                 e = FLESH:dispatch(e) -- get
-                                if FLESH.KES:stage_reserved() then 
+                                if FLESH.KES:stage_reserved() then
                                     FLESH.KES:stage_fill_reserve(e) else
                                     if ststs == FLESH.KES:stage_staged() then FLESH.KES:stage_entry(e) end end end
                             FLESH.KES:commit() -- this could be used mid Sequence, this emergently allow to shuffle labels around
