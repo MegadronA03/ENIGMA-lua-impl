@@ -7,7 +7,7 @@ return (function ()
     --Frontend: NegI - Negotiation Interface/Negate Identity (the interface, what is developed, that's the front name)
     --Backend: OPHANIM - Ontological Polymorphic Host for Authority and Negotiation Interface Management (the substrate, NegI implementation)
     local pprint = require("pprint") -- remove after fixing problems
-    local ldbg = require("lua_utils/debugger")
+    --local ldbg = require("lua_utils/debugger")
     --local ltr = require("luatrace") -- remove after fixing problems
     -- This works more or less as ship of thesus, OPHANIM provides common interfaces for other manifests to communicate with each other in platform agnostic way
     local newstate = function () -- something similar to lua_newstate but for OPHANIM
@@ -357,9 +357,11 @@ return (function ()
             },
             ESC = { -- Escapee Search Container
                 view = setmetatable({}, { __mode = "k" }),
-                start = function(self, err_handler, fn, ...)
+                start = function(self, err_handler, fn, ...) -- I need to reference KES. the KES on it's own is already big enough, I'm not sure it belongs there, but I'm sure it should do layer unwinding
+                    local lid = FLESH.KES:get_context()
                     local ok, result = pcall(fn, ...)
                     if ok then return result end
+                    while lid < FLESH.KES:get_context() do FLESH.KES:pop_layer() end -- rework into checkpoint and revert system, currently it's slow performance wise
                     -- result is the error thrown; if it's a registered signal, call it
                     if self.view[result] then
                         self.view[result] = nil   -- consume
@@ -463,8 +465,6 @@ return (function ()
                             end
                         end
 
-
-                        
                         intent = {
                             can = (map_has_items(can_matches)) and can_matches,
                             ask = (intent.ask ~= argp.ask) and intent.ask,
@@ -1386,7 +1386,7 @@ return (function ()
                                 local ststs = FLESH.KES:stage_staged() -- we need to check if there is a `load`, couldn't come up with a better way
                                 e = FLESH:dispatch(e); e = e or FLESH.NegI.Manifests.gap -- evaluate
                                 e = FLESH:dispatch(e) -- get
-                                if FLESH.KES:stage_reserved() then 
+                                if FLESH.KES:stage_reserved() then
                                     FLESH.KES:stage_fill_reserve(e) else
                                     if ststs == FLESH.KES:stage_staged() then FLESH.KES:stage_entry(e) end end end
                             FLESH.KES:commit() -- this could be used mid Sequence, this emergently allow to shuffle labels around
