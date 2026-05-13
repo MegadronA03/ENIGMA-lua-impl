@@ -143,7 +143,9 @@ return (function ()
                         d = ((not_root) and parent_depth or 0) + 1, -- new layer depth
                         h = {r={},i={}}, -- those are hidden layers (r - relevance, i - isolation)
                         s = {a={},e={},r={}}, -- staged entries data: aliases(aka refs), entries and reserved aliases
-                        c = {ob={},bo={}}} -- `c` is BiMap<order: Integer, bind: Integer> references relvant to this context layer
+                        c = {ob={},bo={}}, -- `c` is BiMap<order: Integer, bind: Integer> references relvant to this context layer
+                        o = {}} -- owner hashes
+                        
                     --if (#self.relevance.dl > l.d) then
                         for d = #self.relevance.dl, l.d, -1 do -- exclude all layers between parent and new layer depths via depth
                             l.h.r[#l.h.r+1] = self.relevance.dl[d] -- hide layers (we can ask depth form them directly)
@@ -207,6 +209,7 @@ return (function ()
                         return self.layers[#self.layers].d
                     end
                 end,
+                get_owner_handle = function (self)  end,
                 get_context = function (self) return #self.layers end, -- will be probably be deprecated
                 get_depth = function (self) return self.layers[#self.layers].d end, -- used by Membranes to memorize context for later use
                 write_entry = function (self, ref, m) -- reference : Number|String, [manifest: Any|Nil]
@@ -356,24 +359,24 @@ return (function ()
                 --binding_label_get = function (self, b) return self.labels.bl[b] end, -- Used by Frame to make label list. probably pe replaced by 'pop_layer' Frame return
             },
             ESC = { -- Escapee Search Container
-                view = setmetatable({}, { __mode = "k" }),
+                closure = nil,
                 start = function(self, err_handler, fn, ...) -- I need to reference KES. the KES on it's own is already big enough, I'm not sure it belongs there, but I'm sure it should do layer unwinding
                     local lid = FLESH.KES:get_context()
                     local ok, result = pcall(fn, ...)
                     if ok then return result end
                     while lid < FLESH.KES:get_context() do FLESH.KES:pop_layer() end -- rework into checkpoint and revert system, currently it's slow performance wise
                     -- result is the error thrown; if it's a registered signal, call it
-                    if self.view[result] then
-                        self.view[result] = nil   -- consume
-                        return result() end            -- call the callback (result itself)
+                    if self.closure == result then
+                        self.closure = nil -- consume
+                        return result() end -- call the callback (result itself)
 
-                    if err_handler then
+                    if err_handler then -- not sure about the design
                         return err_handler(result) else
-                        error(result, 0) end   -- real error
+                        error(result, 0) end -- we let the real error crash it
                 end,
                 shift = function(self, closure)
-                    self.view[closure] = true    -- register as a signal
-                    error(closure)               -- throw it
+                    self.closure = closure -- register as a signal
+                    error(closure) -- drop the stack
                 end,
             },
             do_action = function (self, action, lt, rt) -- make sure to remeber right: clause is case of protocol, action is the manifest about to be executed
@@ -708,6 +711,11 @@ return (function ()
         end
 
         FLESH.NegI.Assets = {
+            Breaker = FLESH.make.Artifact([[return function (self, arg)
+                    FLESH.ESC:shift(function () 
+                        return FLESH:dispatch(self.state, arg)
+                    end)
+                end]], "Breaker transfer"), -- not sure about clause
             ThePasser = FLESH.make.Artifact("return function (self, arg) return arg end", "ThePasser call"),
             ProviderOfThePasser = FLESH.make.Artifact("return function (self) return FLESH.NegI.Assets.ThePasser end", "ProviderOfThePasser call"),
         }
@@ -791,10 +799,10 @@ return (function ()
                     ["in"] = capability_check
                 }),
             ["//"] = FLESH.make.Manifest({
-                pass = FLESH.make.Artifact("return function (self, arg) return { protocol = { pass = FLESH.make.Artifact(\"return function (self, arg) return arg end\")}} end")},{}),
+                get = FLESH.make.Artifact("return function (self, arg) return { protocol = { get = FLESH.make.Artifact(\"return function (self, arg) return arg end\")}} end")},{}),
             pass = FLESH.make.Manifest({ -- TODO: explicitly ends Sequence with appropriate data. monad where first is to where and 2nd is data
-                call = FLESH.make.Artifact([[return function (self, arg)
-                    
+                call = FLESH.make.Artifact([[return function (self, arg) -- not sure about the clause, so I'll leave it like this
+                    return FLESH.make.Manifest({call = FLESH.NegI.Assets.Breaker},arg)
                 end]])
             },{}),
             ["false"] = FLESH.make.Manifest(function () return FLESH.NegI.Manifests.Number.state end,0), -- sugar
@@ -947,11 +955,11 @@ return (function ()
                         if (match ~= nil) then FLESH:dispatch(match, nil, match.protocol.can.load) end
                         for i,e in ipairs(prods) do
                             e = e or FLESH.NegI.Manifests.gap
-                            e = FLESH:dispatch(e); e = e or FLESH.NegI.Manifests.gap -- evaluation
-                            e = FLESH:dispatch(e) -- get
+                            e = FLESH.ESC:start(nil, FLESH.dispatch, FLESH, e); e = e or FLESH.NegI.Manifests.gap -- evaluation
+                            e = FLESH.ESC:start(nil, FLESH.dispatch, FLESH, e) -- get
                             FLESH.KES:stage_fill_reserve(e)
                             FLESH.KES:commit() end
-                        return self.state.creturn and FLESH:dispatch(self.state.creturn) or FLESH.NegI.Manifests.gap
+                        return self.state.creturn and FLESH.ESC:start(nil, FLESH.dispatch, FLESH, self.state.creturn) or FLESH.NegI.Manifests.gap
                     end]], "Sequence call")
             }),
             Membrane = FLESH.make.Manifest({ -- represent the layers and how they affect environment
@@ -1056,7 +1064,7 @@ return (function ()
             },{}), 
             Parser = FLESH.make.Manifest({
                 ["in"] = {call = capability_check},
-                ["="] = {call = FLESH.make.Artifact([[return function (self, arg) end]])}
+                ["="] = {call = FLESH.make.Artifact([[return function (self, arg) end]])} -- make one given the list of Manifest nodes
             },{
                 can = {
                     nodes = {get = FLESH.make.Artifact([[return function (self) end]])} -- get Frame with responsible manifests
@@ -1360,6 +1368,22 @@ return (function ()
                 return FLESH.make.Manifest(FLESH.NegI.Token.state,{})
             end
 
+            local frame_gen = FLESH.make.Artifact([[return function (self)
+                            local items = self.state.items
+                            local labels = table.create and {lb=table.create(0,#items),bl=table.create(0,#items)} or {lb={},bl={}}
+                            for i,e in ipairs(items) do
+                                local ststs = FLESH.KES:stage_staged() -- we need to check if there is a `load`, couldn't come up with a better way
+                                e = FLESH:dispatch(e); e = e or FLESH.NegI.Manifests.gap -- evaluate
+                                e = FLESH:dispatch(e) -- get
+                                if FLESH.KES:stage_reserved() then
+                                    FLESH.KES:stage_fill_reserve(e) else
+                                    if ststs == FLESH.KES:stage_staged() then FLESH.KES:stage_entry(e) end end end
+                            FLESH.KES:commit() -- this could be used mid Sequence, this emergently allow to shuffle labels around
+                            return {
+                                protocol = FLESH.NegI.Manifests.Frame.state,
+                                state = FLESH.KES:inner_snapshot()} -- this might be slower, compared to just poping a Frame from layer, but as long as it works without hacks, I'm satisfied
+                        end]], "CreateFrame get")
+
             -- Internal AST node creators (for parser output, I should also softcode this for evaluation reinterpretation)
             local AST = { -- refactoring the Sequence generator for parser
                 GAP = function () 
@@ -1377,23 +1401,9 @@ return (function ()
                     return {
                         protocol = FLESH.NegI.Manifests.Label.state,
                         state = {name = name}} end,
-                FRAME = function (items) -- TODO: this one isn't a frame, but a frame constructor, that creates environment for writing, like Sequence
+                FRAME = function (items) -- this one isn't a frame, but a frame constructor, that creates environment for writing, like Sequence
                     return { -- constructor
-                        protocol = {get = FLESH.make.Artifact([[return function (self)
-                            local items = self.state.items
-                            local labels = table.create and {lb=table.create(0,#items),bl=table.create(0,#items)} or {lb={},bl={}}
-                            for i,e in ipairs(items) do
-                                local ststs = FLESH.KES:stage_staged() -- we need to check if there is a `load`, couldn't come up with a better way
-                                e = FLESH:dispatch(e); e = e or FLESH.NegI.Manifests.gap -- evaluate
-                                e = FLESH:dispatch(e) -- get
-                                if FLESH.KES:stage_reserved() then
-                                    FLESH.KES:stage_fill_reserve(e) else
-                                    if ststs == FLESH.KES:stage_staged() then FLESH.KES:stage_entry(e) end end end
-                            FLESH.KES:commit() -- this could be used mid Sequence, this emergently allow to shuffle labels around
-                            return {
-                                protocol = FLESH.NegI.Manifests.Frame.state,
-                                state = FLESH.KES:inner_snapshot()} -- this might be slower, compared to just poping a Frame from layer, but as long as it works without hacks, I'm satisfied
-                        end]], "CreateFrame get")},--ref to manifest for running an evaluation (that would be Sequence or Artifact).
+                        protocol = {get = frame_gen},--ref to manifest for running an evaluation (that would be Sequence or Artifact).
                         state = {items = items}} end,
                 SEQUENCE = function (prods, creturn) -- Sequence holds quoted stuff, so we are not doing any actual construction
                     return {
