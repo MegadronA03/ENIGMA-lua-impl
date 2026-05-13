@@ -953,13 +953,15 @@ return (function ()
                         --if load_cmd == frame_p.state.can.load then FLESH:dispatch(load_cmd) end -- technically this is a correct way, but it doesn't work for now, so...
                         local match = FLESH:capcheck(frame_p, arg, (function (m) return m end)) -- I have to hack my way in
                         if (match ~= nil) then FLESH:dispatch(match, nil, match.protocol.can.load) end
+                        return FLESH.ESC:start(nil, (function ()
                         for i,e in ipairs(prods) do
                             e = e or FLESH.NegI.Manifests.gap
-                            e = FLESH.ESC:start(nil, FLESH.dispatch, FLESH, e); e = e or FLESH.NegI.Manifests.gap -- evaluation
-                            e = FLESH.ESC:start(nil, FLESH.dispatch, FLESH, e) -- get
+                            e = FLESH:dispatch(e); e = e or FLESH.NegI.Manifests.gap -- evaluation
+                            e = FLESH:dispatch(e) -- get
                             FLESH.KES:stage_fill_reserve(e)
                             FLESH.KES:commit() end
                         return self.state.creturn and FLESH.ESC:start(nil, FLESH.dispatch, FLESH, self.state.creturn) or FLESH.NegI.Manifests.gap
+                        end))
                     end]], "Sequence call")
             }),
             Membrane = FLESH.make.Manifest({ -- represent the layers and how they affect environment
