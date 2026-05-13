@@ -187,8 +187,8 @@ return (function ()
                     self.layers[#self.layers] = nil -- removing layer
                     return frame and frame_state or nil 
                 end,
-                morph_layer = function (self, parent, isolated, context) -- push_layer, but just rebases current layer. for "pass" use. this is to remove migrate from pop_layer and rework context in push_layer
-                    -- I also not sure if `pass` should keep previous context layer, which this function is implies to do, because `pass` created with explicit data transfer in mind, 
+                morph_layer = function (self, parent, isolated, context) -- push_layer, but just rebases current layer. for "wrap" use. this is to remove migrate from pop_layer and rework context in push_layer
+                    -- I also not sure if `wrap` should keep previous context layer, which this function is implies to do, because `wrap` created with explicit data transfer in mind, 
                     -- leaving something in context is implicit data transfer, which should be another explicit thing on it's own  (like snapshot into frames?)
                 end,
                 unquote_parent = function (self, parent_depth) -- get parent of unquotation
@@ -406,10 +406,10 @@ return (function ()
                             --print("call?")
                             if rterm.protocol and rterm.protocol.get then rterm = self:dispatch(rterm, nil) end -- passive evaluation, because caller expect contents
                             return self:do_action(protocol.call, lterm, rterm) -- needs some standartization on how this should be passed around, don't like hardcoded "self" and "arg"
-                        elseif protocol.pass and protocol.pass.enter then -- when sole protocol existance is to pass negotiation along with some caveats
-                            --print("pass?")
-                            local result = self:dispatch(self:do_action(protocol.pass.enter, lterm), rterm) -- decorative proxy
-                            if protocol.pass.exit then self:do_action(protocol.pass.exit, lterm) end -- transformative proxy
+                        elseif protocol.wrap and protocol.wrap.enter then -- when sole protocol existance is to wrap negotiation along with some caveats
+                            --print("wrap?")
+                            local result = self:dispatch(self:do_action(protocol.wrap.enter, lterm), rterm) -- decorative proxy
+                            if protocol.wrap.exit then self:do_action(protocol.wrap.exit, lterm) end -- transformative proxy
                             return result
                         end
                         if protocol.get then -- fallback to underlying manifest for an answer
@@ -428,9 +428,6 @@ return (function ()
                 else return lterm end
             end,
             capcheck = function(self, protocol_m, manifest, callback) -- Even through fallbacks, is manifest implements this protocol?
-                -- TODO: check protocol in flat form, we need to make sure clauses are reachable, not that there is inside chain some Manifest that satisfy intent.
-                -- TODO: rework `pass` clause into argumentless `proxy_start` and `proxy_end`, argument makes it unpredictable. 
-
                 --print("--cch call")
                 local return_result = function (match)
                     if callback then
@@ -472,13 +469,13 @@ return (function ()
                             can = (map_has_items(can_matches)) and can_matches,
                             ask = (intent.ask ~= argp.ask) and intent.ask,
                             call = (intent.call ~= argp.call) and intent.call,
-                            pass = intent.pass and ((intent.pass.enter or argp.pass.enter or intent.pass.exit ~= argp.pass.exit) and intent.pass),
+                            wrap = intent.wrap and ((intent.wrap.enter or argp.wrap.enter or intent.wrap.exit ~= argp.wrap.exit) and intent.wrap),
                             get = (intent.get ~= argp.get) and intent.get,
                         }
                         if map_has_items(intent) then
-                            if argp.pass and argp.pass.enter then -- what if the protocol we checking against also have `pass`?
-                                local r = scout(intent, self:do_action(argp.pass.enter, m), pp)
-                                if argp.pass.exit then self:do_action(argp.pass.exit, m) end
+                            if argp.wrap and argp.wrap.enter then -- what if the protocol we checking against also have `wrap`?
+                                local r = scout(intent, self:do_action(argp.wrap.enter, m), pp)
+                                if argp.wrap.exit then self:do_action(argp.wrap.exit, m) end
                                 return r end
                             if argp.get then return scout(intent, self:do_action(argp.get, m), pp) end -- what if the protocol we checking against also have `get`?
                             --print("---exauhsted m")
@@ -493,7 +490,7 @@ return (function ()
                         can = protocol_m.state.can,
                         ask = protocol_m.state.ask,
                         call = protocol_m.state.call,
-                        pass = protocol_m.state.pass, -- if protocol has this, then we are looking for proxy
+                        wrap = protocol_m.state.wrap, -- if protocol has this, then we are looking for proxy
                         get = protocol_m.state.get -- same here
                     }, manifest, protopaths)
                 elseif protocol_m.state and not manifest.protocol then
@@ -920,8 +917,8 @@ return (function ()
                         ["."] = {ask = FLESH.make.Artifact([[return function (self) --TODO
                             --self.state.labels
                         end]])},
-                        map = {pass = {enter = FLESH.make.Artifact([[return function (self) end]])}},
-                        concetrate = {pass = {enter = FLESH.make.Artifact([[return function (self) end]])}},
+                        map = {wrap = {enter = FLESH.make.Artifact([[return function (self) end]])}},
+                        concetrate = {wrap = {enter = FLESH.make.Artifact([[return function (self) end]])}},
                     },
                     call = FLESH.make.Artifact([[return function (self, arg) 
                         local num_p = FLESH.NegI.Manifests.Number
@@ -978,14 +975,14 @@ return (function ()
                             quoted = self.state.quoted,
                             content = self.state.content})
                 end]]),
-                pass = { 
+                wrap = { 
                     enter = FLESH.make.Artifact([[return function (self)
                         local d = (self.state.parent > FLESH.KES:get_depth()) and FLESH.KES:get_depth() or self.state.parent
                         d = self.state.quoted and FLESH.KES:unquote_parent(d) or d
                         FLESH.KES:push_layer(d, self.state.contain)
                         return self.state.content or FLESH.NegI.Manifests.gap
-                    end]], "Membrane pass enter"),
-                    exit = FLESH.make.Artifact([[return function (self) FLESH.KES:pop_layer() end]], "Membrane pass exit")
+                    end]], "Membrane wrap enter"),
+                    exit = FLESH.make.Artifact([[return function (self) FLESH.KES:pop_layer() end]], "Membrane wrap exit")
                 }
             }), -- I think I should make distinction between Membranes, though parent Manifest with inherited capabilities will be here
             Make = FLESH.make.Manifest({ -- aka [] or grounded (because push_layer will be grounded by default)
@@ -1678,7 +1675,7 @@ return (function ()
                     call = nil, -- not found appropriate Label in can, do it if there is negotiation
                     get = nil, -- not found appropriate Label in can, do it anyways with (if no call) or without negotioation. this rule exist to describle labels
                     ask = nil, -- default case for "can", can work with call but it's heavily advised to not use with call, otherwise it will cause confusion)
-                    pass = { -- executes, when explicitly not asked for `get`. not sure how do I name this: `pass`, `proxy`, `wrap`
+                    wrap = { -- executes, when explicitly not asked for `get`. not sure how do I name this: `pass`, `proxy`, `wrap`
                         enter = nil, -- `start` or `get` or `setup`, prepares environment and returns the proxied manifest in question
                         exit = nil -- `end` or `clear`, revert changes it did at `start`
                     },
