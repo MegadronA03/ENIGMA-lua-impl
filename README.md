@@ -17,4 +17,4 @@ The `ophanim.lua` (backend name) is a 1 file library for Lua 5.5. You can either
 1. Host representation. Lua have quite messy syntax and context, we need to nicely wrap this up inside some Manifest or Frame.
 2. Just finish manifests (Especially Error, to check if we getting stuck in halt)
 3. Tokens should keep track of current evaluated data by having access to the Host device (like Artifacts do)
-4. User facing REPL
+4. User facing REPL (while there is a REPL, it needs some polishing)
