@@ -21,14 +21,35 @@ local labeling_test = function ()
     io.write("testing labeling (3):\t")
     return OState:dispatch(OState.NegI.parse([[ [a : 2; a : 3; a][] ]])).state
 end
+local swap_test = function ()
+    io.write("testing swap (3):\t") -- need to change how tests are performed
+    return OState:dispatch(OState.NegI.parse([[ [
+        a : 2;
+        b : 3;
+        a : b, b : a;
+        a][] ]])).state
+end
+local passing_test = function ()
+    io.write("testing passing (9):\t")
+    return OState:dispatch(OState.NegI.parse([[ [
+        NegI load;
+        f : [
+            b : 303;
+            a : 9;
+            pass [;r] [r:a,];
+            a : 88;
+        a];
+        f[]
+    ][] ]])).state
+end
 
 print("LOADING=========================================================")
---ldbg(false)
 pprint(contain_test())
 pprint(quote_test())
 pprint(grounding_test())
 pprint(labeling_test())
---ldbg(true)
+pprint(swap_test())
+pprint(passing_test())
 print("NegI REPL v0.0.1 (Pre-Alpha)====================================")
 
 OState.KES:write_entry("REPL", OState.make.Manifest({ -- we describle REPL authority here, instead of using arbitrary commands
