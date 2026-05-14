@@ -7,7 +7,8 @@ return (function ()
     --Frontend: NegI - Negotiation Interface/Negate Identity (the interface, what is developed, that's the front name)
     --Backend: OPHANIM - Ontological Polymorphic Host for Authority and Negotiation Interface Management (the substrate, NegI implementation)
     local pprint = require("pprint") -- remove after fixing problems
-    --local ldbg = require("lua_utils/debugger") -- https://codeberg.org/slembcke/debugger.lua
+    --local ldbg = require("lua_utils/debugger")
+    --local ltr = require("luatrace") -- remove after fixing problems
     -- This works more or less as ship of thesus, OPHANIM provides common interfaces for other manifests to communicate with each other in platform agnostic way
     local newstate = function () -- something similar to lua_newstate but for OPHANIM
         local new_conv = function (c, ...) --helps chaining like resolve_chain("salt")(4)(5)(1).r
@@ -142,7 +143,9 @@ return (function ()
                         d = ((not_root) and parent_depth or 0) + 1, -- new layer depth
                         h = {r={},i={}}, -- those are hidden layers (r - relevance, i - isolation)
                         s = {a={},e={},r={}}, -- staged entries data: aliases(aka refs), entries and reserved aliases
-                        c = {ob={},bo={}}} -- `c` is BiMap<order: Integer, bind: Integer> references relvant to this context layer
+                        c = {ob={},bo={}}, -- `c` is BiMap<order: Integer, bind: Integer> references relvant to this context layer
+                        o = {}} -- owner hashes
+                        
                     --if (#self.relevance.dl > l.d) then
                         for d = #self.relevance.dl, l.d, -1 do -- exclude all layers between parent and new layer depths via depth
                             l.h.r[#l.h.r+1] = self.relevance.dl[d] -- hide layers (we can ask depth form them directly)
@@ -206,6 +209,7 @@ return (function ()
                         return self.layers[#self.layers].d
                     end
                 end,
+                get_owner_handle = function (self)  end,
                 get_context = function (self) return #self.layers end, -- will be probably be deprecated
                 get_depth = function (self) return self.layers[#self.layers].d end, -- used by Membranes to memorize context for later use
                 write_entry = function (self, ref, m) -- reference : Number|String, [manifest: Any|Nil]
@@ -355,24 +359,24 @@ return (function ()
                 --binding_label_get = function (self, b) return self.labels.bl[b] end, -- Used by Frame to make label list. probably pe replaced by 'pop_layer' Frame return
             },
             ESC = { -- Escapee Search Container
-                view = setmetatable({}, { __mode = "k" }),
+                closure = nil,
                 start = function(self, err_handler, fn, ...) -- I need to reference KES. the KES on it's own is already big enough, I'm not sure it belongs there, but I'm sure it should do layer unwinding
                     local lid = FLESH.KES:get_context()
                     local ok, result = pcall(fn, ...)
                     if ok then return result end
                     while lid < FLESH.KES:get_context() do FLESH.KES:pop_layer() end -- rework into checkpoint and revert system, currently it's slow performance wise
                     -- result is the error thrown; if it's a registered signal, call it
-                    if self.view[result] then
-                        self.view[result] = nil   -- consume
-                        return result() end            -- call the callback (result itself)
+                    if self.closure == result then
+                        self.closure = nil -- consume
+                        return result() end -- call the callback (result itself)
 
-                    if err_handler then
+                    if err_handler then -- not sure about the design
                         return err_handler(result) else
-                        error(result, 0) end   -- real error
+                        error(result, 0) end -- we let the real error crash it
                 end,
                 shift = function(self, closure)
-                    self.view[closure] = true    -- register as a signal
-                    error(closure)               -- throw it
+                    self.closure = closure -- register as a signal
+                    error(closure) -- drop the stack
                 end,
             },
             do_action = function (self, action, lt, rt) -- make sure to remeber right: clause is case of protocol, action is the manifest about to be executed
@@ -402,10 +406,10 @@ return (function ()
                             --print("call?")
                             if rterm.protocol and rterm.protocol.get then rterm = self:dispatch(rterm, nil) end -- passive evaluation, because caller expect contents
                             return self:do_action(protocol.call, lterm, rterm) -- needs some standartization on how this should be passed around, don't like hardcoded "self" and "arg"
-                        elseif protocol.pass and protocol.pass.enter then -- when sole protocol existance is to pass negotiation along with some caveats
-                            --print("pass?")
-                            local result = self:dispatch(self:do_action(protocol.pass.enter, lterm), rterm) -- decorative proxy
-                            if protocol.pass.exit then self:do_action(protocol.pass.exit, lterm) end -- transformative proxy
+                        elseif protocol.wrap and protocol.wrap.enter then -- when sole protocol existance is to wrap negotiation along with some caveats
+                            --print("wrap?")
+                            local result = self:dispatch(self:do_action(protocol.wrap.enter, lterm), rterm) -- decorative proxy
+                            if protocol.wrap.exit then self:do_action(protocol.wrap.exit, lterm) end -- transformative proxy
                             return result
                         end
                         if protocol.get then -- fallback to underlying manifest for an answer
@@ -424,9 +428,6 @@ return (function ()
                 else return lterm end
             end,
             capcheck = function(self, protocol_m, manifest, callback) -- Even through fallbacks, is manifest implements this protocol?
-                -- TODO: check protocol in flat form, we need to make sure clauses are reachable, not that there is inside chain some Manifest that satisfy intent.
-                -- TODO: rework `pass` clause into argumentless `proxy_start` and `proxy_end`, argument makes it unpredictable. 
-
                 --print("--cch call")
                 local return_result = function (match)
                     if callback then
@@ -468,13 +469,13 @@ return (function ()
                             can = (map_has_items(can_matches)) and can_matches,
                             ask = (intent.ask ~= argp.ask) and intent.ask,
                             call = (intent.call ~= argp.call) and intent.call,
-                            pass = intent.pass and ((intent.pass.enter or argp.pass.enter or intent.pass.exit ~= argp.pass.exit) and intent.pass),
+                            wrap = intent.wrap and ((intent.wrap.enter or argp.wrap.enter or intent.wrap.exit ~= argp.wrap.exit) and intent.wrap),
                             get = (intent.get ~= argp.get) and intent.get,
                         }
                         if map_has_items(intent) then
-                            if argp.pass and argp.pass.enter then -- what if the protocol we checking against also have `pass`?
-                                local r = scout(intent, self:do_action(argp.pass.enter, m), pp)
-                                if argp.pass.exit then self:do_action(argp.pass.exit, m) end
+                            if argp.wrap and argp.wrap.enter then -- what if the protocol we checking against also have `wrap`?
+                                local r = scout(intent, self:do_action(argp.wrap.enter, m), pp)
+                                if argp.wrap.exit then self:do_action(argp.wrap.exit, m) end
                                 return r end
                             if argp.get then return scout(intent, self:do_action(argp.get, m), pp) end -- what if the protocol we checking against also have `get`?
                             --print("---exauhsted m")
@@ -489,7 +490,7 @@ return (function ()
                         can = protocol_m.state.can,
                         ask = protocol_m.state.ask,
                         call = protocol_m.state.call,
-                        pass = protocol_m.state.pass, -- if protocol has this, then we are looking for proxy
+                        wrap = protocol_m.state.wrap, -- if protocol has this, then we are looking for proxy
                         get = protocol_m.state.get -- same here
                     }, manifest, protopaths)
                 elseif protocol_m.state and not manifest.protocol then
@@ -701,12 +702,17 @@ return (function ()
             return FLESH.make.Artifact([[return function (self, arg)
                 -- wrap host resource manifest
                 if (type(arg) == "]]..host_type..[[") then return {protocol = self.state,state = arg} end
-                if (FLESH:capcheck(self,arg)) then return arg end -- literal uses same protocol, so we just passing
+                if (FLESH:capcheck(self,arg)) then return arg end -- literal uses same protocol, so we just wraping
                 return -- Error manifest
             end]])
         end
 
         FLESH.NegI.Assets = {
+            Breaker = FLESH.make.Artifact([[return function (self, arg)
+                    FLESH.ESC:shift(function () 
+                        return FLESH:dispatch(self.state, arg)
+                    end)
+                end]], "Breaker transfer"), -- not sure about clause
             ThePasser = FLESH.make.Artifact("return function (self, arg) return arg end", "ThePasser call"),
             ProviderOfThePasser = FLESH.make.Artifact("return function (self) return FLESH.NegI.Assets.ThePasser end", "ProviderOfThePasser call"),
         }
@@ -790,10 +796,10 @@ return (function ()
                     ["in"] = capability_check
                 }),
             ["//"] = FLESH.make.Manifest({
-                pass = FLESH.make.Artifact("return function (self, arg) return { protocol = { pass = FLESH.make.Artifact(\"return function (self, arg) return arg end\")}} end")},{}),
+                get = FLESH.make.Artifact("return function (self, arg) return { protocol = { get = FLESH.make.Artifact(\"return function (self, arg) return arg end\")}} end")},{}),
             pass = FLESH.make.Manifest({ -- TODO: explicitly ends Sequence with appropriate data. monad where first is to where and 2nd is data
-                call = FLESH.make.Artifact([[return function (self, arg)
-                    
+                call = FLESH.make.Artifact([[return function (self, arg) -- not sure about the clause, so I'll leave it like this
+                    return FLESH.make.Manifest({call = FLESH.NegI.Assets.Breaker},arg)
                 end]])
             },{}),
             ["false"] = FLESH.make.Manifest(function () return FLESH.NegI.Manifests.Number.state end,0), -- sugar
@@ -911,8 +917,8 @@ return (function ()
                         ["."] = {ask = FLESH.make.Artifact([[return function (self) --TODO
                             --self.state.labels
                         end]])},
-                        map = {pass = {enter = FLESH.make.Artifact([[return function (self) end]])}},
-                        concetrate = {pass = {enter = FLESH.make.Artifact([[return function (self) end]])}},
+                        map = {wrap = {enter = FLESH.make.Artifact([[return function (self) end]])}},
+                        concetrate = {wrap = {enter = FLESH.make.Artifact([[return function (self) end]])}},
                     },
                     call = FLESH.make.Artifact([[return function (self, arg) 
                         local num_p = FLESH.NegI.Manifests.Number
@@ -944,13 +950,15 @@ return (function ()
                         --if load_cmd == frame_p.state.can.load then FLESH:dispatch(load_cmd) end -- technically this is a correct way, but it doesn't work for now, so...
                         local match = FLESH:capcheck(frame_p, arg, (function (m) return m end)) -- I have to hack my way in
                         if (match ~= nil) then FLESH:dispatch(match, nil, match.protocol.can.load) end
+                        return FLESH.ESC:start(nil, (function ()
                         for i,e in ipairs(prods) do
                             e = e or FLESH.NegI.Manifests.gap
                             e = FLESH:dispatch(e); e = e or FLESH.NegI.Manifests.gap -- evaluation
                             e = FLESH:dispatch(e) -- get
                             FLESH.KES:stage_fill_reserve(e)
                             FLESH.KES:commit() end
-                        return self.state.creturn and FLESH:dispatch(self.state.creturn) or FLESH.NegI.Manifests.gap
+                        return self.state.creturn and FLESH.ESC:start(nil, FLESH.dispatch, FLESH, self.state.creturn) or FLESH.NegI.Manifests.gap
+                        end))
                     end]], "Sequence call")
             }),
             Membrane = FLESH.make.Manifest({ -- represent the layers and how they affect environment
@@ -967,14 +975,14 @@ return (function ()
                             quoted = self.state.quoted,
                             content = self.state.content})
                 end]]),
-                pass = { 
+                wrap = { 
                     enter = FLESH.make.Artifact([[return function (self)
                         local d = (self.state.parent > FLESH.KES:get_depth()) and FLESH.KES:get_depth() or self.state.parent
                         d = self.state.quoted and FLESH.KES:unquote_parent(d) or d
                         FLESH.KES:push_layer(d, self.state.contain)
                         return self.state.content or FLESH.NegI.Manifests.gap
-                    end]], "Membrane pass enter"),
-                    exit = FLESH.make.Artifact([[return function (self) FLESH.KES:pop_layer() end]], "Membrane pass exit")
+                    end]], "Membrane wrap enter"),
+                    exit = FLESH.make.Artifact([[return function (self) FLESH.KES:pop_layer() end]], "Membrane wrap exit")
                 }
             }), -- I think I should make distinction between Membranes, though parent Manifest with inherited capabilities will be here
             Make = FLESH.make.Manifest({ -- aka [] or grounded (because push_layer will be grounded by default)
@@ -1055,7 +1063,7 @@ return (function ()
             },{}), 
             Parser = FLESH.make.Manifest({
                 ["in"] = {call = capability_check},
-                ["="] = {call = FLESH.make.Artifact([[return function (self, arg) end]])}
+                ["="] = {call = FLESH.make.Artifact([[return function (self, arg) end]])} -- make one given the list of Manifest nodes
             },{
                 can = {
                     nodes = {get = FLESH.make.Artifact([[return function (self) end]])} -- get Frame with responsible manifests
@@ -1359,6 +1367,22 @@ return (function ()
                 return FLESH.make.Manifest(FLESH.NegI.Token.state,{})
             end
 
+            local frame_gen = FLESH.make.Artifact([[return function (self)
+                            local items = self.state.items
+                            local labels = table.create and {lb=table.create(0,#items),bl=table.create(0,#items)} or {lb={},bl={}}
+                            for i,e in ipairs(items) do
+                                local ststs = FLESH.KES:stage_staged() -- we need to check if there is a `load`, couldn't come up with a better way
+                                e = FLESH:dispatch(e); e = e or FLESH.NegI.Manifests.gap -- evaluate
+                                e = FLESH:dispatch(e) -- get
+                                if FLESH.KES:stage_reserved() then
+                                    FLESH.KES:stage_fill_reserve(e) else
+                                    if ststs == FLESH.KES:stage_staged() then FLESH.KES:stage_entry(e) end end end
+                            FLESH.KES:commit() -- this could be used mid Sequence, this emergently allow to shuffle labels around
+                            return {
+                                protocol = FLESH.NegI.Manifests.Frame.state,
+                                state = FLESH.KES:inner_snapshot()} -- this might be slower, compared to just poping a Frame from layer, but as long as it works without hacks, I'm satisfied
+                        end]], "CreateFrame get")
+
             -- Internal AST node creators (for parser output, I should also softcode this for evaluation reinterpretation)
             local AST = { -- refactoring the Sequence generator for parser
                 GAP = function () 
@@ -1376,23 +1400,9 @@ return (function ()
                     return {
                         protocol = FLESH.NegI.Manifests.Label.state,
                         state = {name = name}} end,
-                FRAME = function (items) -- TODO: this one isn't a frame, but a frame constructor, that creates environment for writing, like Sequence
+                FRAME = function (items) -- this one isn't a frame, but a frame constructor, that creates environment for writing, like Sequence
                     return { -- constructor
-                        protocol = {get = FLESH.make.Artifact([[return function (self)
-                            local items = self.state.items
-                            local labels = table.create and {lb=table.create(0,#items),bl=table.create(0,#items)} or {lb={},bl={}}
-                            for i,e in ipairs(items) do
-                                local ststs = FLESH.KES:stage_staged() -- we need to check if there is a `load`, couldn't come up with a better way
-                                e = FLESH:dispatch(e); e = e or FLESH.NegI.Manifests.gap -- evaluate
-                                e = FLESH:dispatch(e) -- get
-                                if FLESH.KES:stage_reserved() then
-                                    FLESH.KES:stage_fill_reserve(e) else
-                                    if ststs == FLESH.KES:stage_staged() then FLESH.KES:stage_entry(e) end end end
-                            FLESH.KES:commit() -- this could be used mid Sequence, this emergently allow to shuffle labels around
-                            return {
-                                protocol = FLESH.NegI.Manifests.Frame.state,
-                                state = FLESH.KES:inner_snapshot()} -- this might be slower, compared to just poping a Frame from layer, but as long as it works without hacks, I'm satisfied
-                        end]], "CreateFrame get")},--ref to manifest for running an evaluation (that would be Sequence or Artifact).
+                        protocol = {get = frame_gen},--ref to manifest for running an evaluation (that would be Sequence or Artifact).
                         state = {items = items}} end,
                 SEQUENCE = function (prods, creturn) -- Sequence holds quoted stuff, so we are not doing any actual construction
                     return {
@@ -1665,7 +1675,7 @@ return (function ()
                     call = nil, -- not found appropriate Label in can, do it if there is negotiation
                     get = nil, -- not found appropriate Label in can, do it anyways with (if no call) or without negotioation. this rule exist to describle labels
                     ask = nil, -- default case for "can", can work with call but it's heavily advised to not use with call, otherwise it will cause confusion)
-                    pass = { -- executes, when explicitly not asked for `get`. not sure how do I name this: `pass`, `proxy`, `wrap`
+                    wrap = { -- executes, when explicitly not asked for `get`. not sure how do I name this: `pass`, `proxy`, `wrap`
                         enter = nil, -- `start` or `get` or `setup`, prepares environment and returns the proxied manifest in question
                         exit = nil -- `end` or `clear`, revert changes it did at `start`
                     },
