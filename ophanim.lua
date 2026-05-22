@@ -24,9 +24,6 @@ return (function ()
             end
             return s
         end
-        local map_has_items = function(t)
-            for i,e in pairs(t) do return true end return false
-        end
         local bimap_write = function(bimap, view_key, index, value)
             -- Input validation
             local reverse_key = (view_key):reverse() -- it's fine because code follows this convention
@@ -79,6 +76,9 @@ return (function ()
             },
             KES = { -- "Knowledge Environment State" (considered finished, until bugs will be found)
                 layers = {{d = 1,h = {r={},i={}},s = {a={},e={},r={}},c = {ob={},bo={}}}}, -- stack of references, string names ready for free (initial layer is preloaded)
+                handles = { -- instead of giving out raw layer depths and introducing use after free bugs, we introduce "addresses" to relevant layers 
+                    lh = {},
+                    hl = {}},
                 relevance = { -- tracks what currently available in active context
                     dl = {[1]=1}, -- Array<depth: Integer, layer_id: Integer> 
                     ld = {[1]=1}}, -- Map<layer_id: Integer, depth: Integer> stores which layers are relevent to current context, mostly used as Set<layer_id: Integer>
@@ -278,22 +278,26 @@ return (function ()
                     --print("\tcontent:")
                     --pprint(self.layers[#self.layers].s.a)
                     local stage = self.layers[#self.layers].s
-                    local wue = true and function (self, e)
-                        --print("\t+ <anonymic>")
-                        e.b[#e.b+1] = self:write_entry(nil, e.d)
-                    end or function (self, e) end
                     for _, e in ipairs(stage.e) do
                         e.b = {}
                         if (#e.a > 0) then for _, name in ipairs(e.a) do
                             --print("\t+ "..name)
                             e.b[#e.b+1] = self:write_entry(name, e.d) end
-                        else wue(self, e) end end
+                        else e.b[#e.b+1] = self:write_entry(nil, e.d) end end
                     local output = self.layers[#self.layers].s
                     self.layers[#self.layers].s = {a={},e={},r={}} -- a - aliases, e - entries, r - reserve
                     return output -- should be a map of entry -> binding, but for now it's fine
                 end,
                 stage_clear = function (self)
                     self.layers[#self.layers].s = {a={},e={},r={}} -- a - aliases, e - entries, r - reserve
+                end,
+                stage_snapshot = function (self, frame_state) -- alternate for inner_snapshot, just for the Frames
+                    frame_state = frame_state or {labels = {lb={},bl={}}, bindings = {}}
+                    local stage = self.layers[#self.layers].s
+                    for _, e in ipairs(stage.e) do
+                        frame_state.bindings[#frame_state.bindings+1] = {delta = e.d}
+                        for _, name in ipairs(e.a) do bimap_write(frame_state.labels, "bl", #frame_state.bindings, name) end end
+                    return frame_state
                 end,
                 direct_snapshot = function (self, layer_id, frame_state) -- THIS IS RAW AUTHORITY THAT VOIDS SECURITY GUARANTEES
                     frame_state = frame_state or {labels = {lb={},bl={}}, bindings = {}} -- when provided, pours effects directly
@@ -382,15 +386,15 @@ return (function ()
                 if not (action and lt) then return self.NegI.Manifests.gap end
                 local r
                 if self:intentcheck(self.NegI.Manifests.Artifact.state, action.protocol) then
-                    r = action.state.artifact(lt, rt) else
-                    r = self:dispatch(action, self.make.Frame({self = lt, arg = rt})) end
-                return r or self.NegI.Manifests.gap
+                    return action.state.artifact(lt, rt) else
+                    return self:dispatch(action, self.make.Frame({self = lt, arg = rt})) end
+                --return r or self.NegI.Manifests.gap
             end,
             dispatch = function (self, lterm, rterm, protocol) -- needs debugging
                 --print("dispatch start")
                 if lterm == nil then error("FLESH:dispatch - got nil, expected Manifest") return end
                 protocol = protocol or lterm.protocol -- protocol argument is optional and here only for convinience, so I don't have to recreate manifest with transformed protocols
-                if protocol and map_has_items(protocol) then
+                if protocol and next(protocol) then
                     if rterm then
                         if protocol.can then -- both "can" and "ask" may not be fulfilled unlike "can" or "get" or abscense of protocol actions
                             --print("can?")
@@ -405,23 +409,33 @@ return (function ()
                             --print("call?")
                             if rterm.protocol and rterm.protocol.get then rterm = self:dispatch(rterm, nil) end -- passive evaluation, because caller expect contents
                             return self:do_action(protocol.call, lterm, rterm) -- needs some standartization on how this should be passed around, don't like hardcoded "self" and "arg"
-                        elseif protocol.wrap and protocol.wrap.enter then -- when sole protocol existance is to wrap negotiation along with some caveats
-                            --print("wrap?")
-                            local result = self:dispatch(self:do_action(protocol.wrap.enter, lterm), rterm) -- decorative proxy
-                            if protocol.wrap.exit then self:do_action(protocol.wrap.exit, lterm) end -- transformative proxy
-                            return result
-                        end
-                        if protocol.get then -- fallback to underlying manifest for an answer
-                            --print("get.")
+                        elseif protocol.get then -- fallback to underlying manifest for an answer
                             local fabk = self:do_action(protocol.get, lterm)
-                            if self:intentcheck(self.NegI.Manifests.Artifact.state, fabk.protocol) then
-                                fabk = fabk.state.artifact(fabk, rterm) else
-                                fabk = self:dispatch(fabk, rterm) end
-                            return fabk or self.NegI.Manifests.gap
+                            if protocol.wrap then -- wraps the end of negotiation
+                                --print("get and wrap.")
+                                local result
+                                if self:intentcheck(self.NegI.Manifests.Artifact.state, fabk.protocol) then -- Not using ternary, lua likes to execute all code inside expression sometimes
+                                    result = fabk.state.artifact(fabk, rterm) else
+                                    result = self:dispatch(fabk, rterm) end
+                                --local result = self:dispatch(fabk, rterm) -- we have rterm, so we should use it
+                                self:do_action(protocol.wrap, lterm) -- wrapping up
+                                return result
+                            else
+                                --print("get.")
+                                if self:intentcheck(self.NegI.Manifests.Artifact.state, fabk.protocol) then -- we need TCO for performance reasons
+                                    return fabk.state.artifact(fabk, rterm) else
+                                    return self:dispatch(fabk, rterm) end
+                            end
                         else return self.make.Error("OPHANIM: FLESH:dispatch Error: rterm is outside of lterm protocol capability") end
-                    elseif protocol.get then
+                    elseif protocol.get and not protocol.wrap then -- if we have wrapping, then we handle it with care or something
                         --print("get explicit.")
-                        return self:do_action(protocol.get, lterm)
+                        --if protocol.wrap then -- wraps the end of negotiation
+                        --    --print("... and wrap.")
+                        --    local fabk = self:do_action(protocol.get, lterm)
+                        --    self:do_action(protocol.wrap, lterm) -- wrapping up
+                        --    return fabk
+                        --end
+                        return self:do_action(protocol.get, lterm) -- we need TCO for performance reasons
                     else return lterm end
                 elseif rterm then return self.make.Error("OPHANIM: FLESH:dispatch Error: missing protocol")
                 else return lterm end
@@ -447,15 +461,17 @@ return (function ()
                         if pp[string.format("%p", m.protocol)] then return return_result() end
                         pp[string.format("%p", m.protocol)] = true
                         if protocol_m.state == m.protocol then return return_result(m) end
-                        if not (intent and map_has_items(intent)) then return return_result(m) end
-                        if not (argp and map_has_items(argp)) then return return_result() end
+                        if not (intent and next(intent)) then return return_result(m) end
+                        if not (argp and next(argp)) then return return_result() end
 
                         local can_matches = {}
                         if (intent.can and intent.can ~= argp.can) then
                             if argp.can then
                                 for c,a in pairs(intent.can) do
                                     if argp.can[c] ~= a then 
-                                        
+                                        if argp.can[c] and argp.can[c].get then
+                                            
+                                        end
                                         can_matches[c] = a 
                                     end -- we stick to simplicity for now
                                 end
@@ -465,17 +481,18 @@ return (function ()
                         end
 
                         intent = {
-                            can = (map_has_items(can_matches)) and can_matches,
+                            can = (next(can_matches)) and can_matches,
                             ask = (intent.ask ~= argp.ask) and intent.ask,
                             call = (intent.call ~= argp.call) and intent.call,
-                            wrap = intent.wrap and ((intent.wrap.enter or argp.wrap.enter or intent.wrap.exit ~= argp.wrap.exit) and intent.wrap),
+                            --wrap = intent.wrap and ((intent.wrap.enter or argp.wrap.enter or intent.wrap.exit ~= argp.wrap.exit) and intent.wrap),
+                            wrap = (intent.wrap ~= argp.wrap) and intent.wrap,
                             get = (intent.get ~= argp.get) and intent.get,
                         }
-                        if map_has_items(intent) then
-                            if argp.wrap and argp.wrap.enter then -- what if the protocol we checking against also have `wrap`?
-                                local r = scout(intent, self:do_action(argp.wrap.enter, m), pp)
-                                if argp.wrap.exit then self:do_action(argp.wrap.exit, m) end
-                                return r end
+                        if next(intent) then
+                            --if argp.wrap and argp.wrap.enter then -- what if the protocol we checking against also have `wrap`?
+                            --    local r = scout(intent, self:do_action(argp.wrap.enter, m), pp)
+                            --    if argp.wrap.exit then self:do_action(argp.wrap.exit, m) end
+                            --    return r end
                             if argp.get then return scout(intent, self:do_action(argp.get, m), pp) end -- what if the protocol we checking against also have `get`?
                             --print("---exauhsted m")
                             return return_result()
@@ -496,7 +513,7 @@ return (function ()
                     --print("--exauhsted m")
                     return return_result()
                 end
-                print("--identical")
+                --print("--identical")
                 return return_result(manifest)
             end,
             intentcheck = function (self, p_template, p_checking) -- for backend
@@ -724,6 +741,11 @@ return (function ()
                 local binding = frame_state.bindings[query]
                 return binding and (binding.parent and binding.parent[binding.delta] or binding.delta) or nil
             end,
+            --frame_append = function (frame_state, data)
+            --    frame_state.bindings[#frame_state.bindings+1] = {delta = self.bindings[b].records[#self.layers]}
+            --    if type(self.labels.bl[b]) == "string" then
+            --        bimap_write(frame_state.labels, "bl", #frame_state.bindings, self.labels.bl[b]) end
+            --end,
             the_passer = function (self, arg) return arg end
         }
 
@@ -916,8 +938,8 @@ return (function ()
                         ["."] = {ask = FLESH.make.Artifact([[return function (self) --TODO
                             --self.state.labels
                         end]])},
-                        map = {wrap = {enter = FLESH.make.Artifact([[return function (self) end]])}},
-                        concetrate = {wrap = {enter = FLESH.make.Artifact([[return function (self) end]])}},
+                        map = {call = FLESH.make.Artifact([[return function (self, arg) end]])},
+                        concetrate = {get = FLESH.make.Artifact([[return function (self) end]])},
                     },
                     call = FLESH.make.Artifact([[return function (self, arg) 
                         local num_p = FLESH.NegI.Manifests.Number
@@ -965,24 +987,15 @@ return (function ()
                     ["in"] = {call = capability_check},
                     ["="] = {call = FLESH.make.Artifact([[return function (self, arg) end]])}
                 }
-            },{
-                get = FLESH.make.Artifact([[return function (self) -- I'm not sure if that's the right way, but anyways, if it's working - it works
+            },{ -- KES should track layer versions
+                get = FLESH.make.Artifact([[return function (self)
                     local d = (self.state.parent > FLESH.KES:get_depth()) and FLESH.KES:get_depth() or self.state.parent
-                    return FLESH.make.Manifest(FLESH.NegI.Manifests.Membrane.state, {
-                            parent = d,
-                            contain = self.state.contain,
-                            quoted = self.state.quoted,
-                            content = self.state.content})
-                end]]),
-                wrap = { 
-                    enter = FLESH.make.Artifact([[return function (self)
-                        local d = (self.state.parent > FLESH.KES:get_depth()) and FLESH.KES:get_depth() or self.state.parent
-                        d = self.state.quoted and FLESH.KES:unquote_parent(d) or d
-                        FLESH.KES:push_layer(d, self.state.contain)
-                        return self.state.content or FLESH.NegI.Manifests.gap
-                    end]], "Membrane wrap enter"),
-                    exit = FLESH.make.Artifact([[return function (self) FLESH.KES:pop_layer() end]], "Membrane wrap exit")
-                }
+                    d = self.state.quoted and FLESH.KES:unquote_parent(d) or d
+                    FLESH.KES:push_layer(d, self.state.contain)
+                    return self.state.content or FLESH.NegI.Manifests.gap
+                end]], "Membrane wrap enter"),
+                wrap = FLESH.make.Artifact([[return function (self) FLESH.KES:pop_layer() end]], "Membrane wrap exit")
+                
             }), -- I think I should make distinction between Membranes, though parent Manifest with inherited capabilities will be here
             Make = FLESH.make.Manifest({ -- aka [] or grounded (because push_layer will be grounded by default)
                 can = {
@@ -1376,10 +1389,9 @@ return (function ()
                                 if FLESH.KES:stage_reserved() then
                                     FLESH.KES:stage_fill_reserve(e) else
                                     if ststs == FLESH.KES:stage_staged() then FLESH.KES:stage_entry(e) end end end
-                            FLESH.KES:commit() -- this could be used mid Sequence, this emergently allow to shuffle labels around
                             return {
                                 protocol = FLESH.NegI.Manifests.Frame.state,
-                                state = FLESH.KES:inner_snapshot()} -- this might be slower, compared to just poping a Frame from layer, but as long as it works without hacks, I'm satisfied
+                                state = FLESH.KES:stage_snapshot()}
                         end]], "CreateFrame get")
 
             -- Internal AST node creators (for parser output, I should also softcode this for evaluation reinterpretation)
@@ -1678,6 +1690,9 @@ return (function ()
                         enter = nil, -- `start` or `get` or `setup`, prepares environment and returns the proxied manifest in question
                         exit = nil -- `end` or `clear`, revert changes it did at `start`
                     },
+
+                    get = nil, -- on start getting the stuff
+                    wrap = nil, -- wrapping up the site
                     --handoff = nil, -- triggers on layer ownership transfer (I think I should leave that up to KES)
 
                 },

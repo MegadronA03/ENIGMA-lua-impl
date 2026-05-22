@@ -1,5 +1,6 @@
 local pprint = require("pprint")
 local ophanim = require("ophanim")
+local ldbg = require("lua_utils/debugger")
 
 local OState = ophanim.newstate()
 --pprint(OState)
@@ -52,29 +53,33 @@ pprint(swap_test())
 pprint(passing_test())
 print("NegI REPL v0.0.1 (Pre-Alpha)====================================")
 
-OState.KES:write_entry("REPL", OState.make.Manifest({ -- we describle REPL authority here, instead of using arbitrary commands
+local running = true
+local rmf = OState.make.Manifest({ -- we describle REPL authority here, instead of using arbitrary commands
         can = {
-            exit = {call = OState.make.Artifact([[]], "REPL can exit call")}
+            exit = {get = OState.make.Artifact([[return function (self) self.state.stop_repl() end]], "REPL can exit call")},
+            reset = {get = OState.make.Artifact([[return function (self)
+                while self.state.repl_layer < FLESH.KES:get_context() do FLESH.KES:pop_layer() end
+                FLESH.KES:push_layer(FLESH.KES:get_context(),true)
+            end]], "REPL can reset get")},
+            help = {get = OState.make.Artifact([[]])}
         }
     },{
+        repl_layer = OState.KES:get_context(),
+        stop_repl = function () running = false end,
+    })
+local rsl = OState.KES:write_entry("REPL", rmf)
 
-    
-}))
 
-OState.KES:push_layer(1,true)
-while true do
+OState.KES:push_layer(OState.KES:get_context(),true)
+while running do
     io.write(">")
     local input = io.read()
-    if input == "exit" then -- reimplement as manifest in REPL Frame
-        break
-    else
-        local e = OState.NegI.parse(input) or OState.NegI.Manifests.gap
-        e = OState:dispatch(e); e = e or OState.NegI.Manifests.gap -- evaluation
-        e = OState:dispatch(e); e = (e ~= OState.NegI.Manifests.gap) and e or nil -- get
-        OState.KES:stage_fill_reserve(e)
-        OState.KES:commit()
-        pprint((e or {}).state)
-    end
+    local e = OState.NegI.parse(input) or OState.NegI.Manifests.gap
+    e = OState:dispatch(e); e = e or OState.NegI.Manifests.gap -- evaluation
+    e = OState:dispatch(e); e = (e ~= OState.NegI.Manifests.gap) and e or nil -- get
+    OState.KES:stage_fill_reserve(e)
+    OState.KES:commit()
+    pprint((e or {}).state)
 end
 OState.KES:pop_layer()
 -- starting to make the system alive
