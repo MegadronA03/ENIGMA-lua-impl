@@ -581,11 +581,11 @@ return (function ()
             protocol = {
                 can = {
                     ["in"] = {call = "stub"},
-                    ["="] = {call = "stub"}}},
+                    ["="] = {can = {source = {call = "stub"}}}}},
             state = {
                 can = {
-                    reload = {get = "stub"}},
-                    introspect = {get = "stub"}, -- can't decide on a name yet, should return ingridients for cooking the authority in question
+                    reload = {get = "stub"},
+                    introspect = {get = "stub"}}, -- can't decide on a name yet, should return ingridients for cooking the authority in question
                 call = "stub"}}
         
         local dcopy = function (t)
@@ -659,11 +659,26 @@ return (function ()
         local capability_check = FLESH.make.Artifact([[return function (self, arg)
             return FLESH.make.Number(FLESH:capcheck(self, arg)) end]], "`in` aka capcheck")
         
-        FLESH.NegI.Manifests.Artifact.protocol.can["in"] = capability_check
-        FLESH.NegI.Manifests.Artifact.protocol.can["="] = FLESH.make.Artifact([[return function (self, arg) end]], "Artifact can =")
-        FLESH.NegI.Manifests.Artifact.state.can.reload = FLESH.make.Artifact([[return function (self)
+        FLESH.NegI.Manifests.Artifact.protocol.can["in"].call = capability_check
+        FLESH.NegI.Manifests.Artifact.protocol.can["="].can["source"].call = FLESH.make.Artifact([[return function (self, arg)
+            local str_p = FLESH.NegI.Manifests.String
+            local authority_recipie = FLESH:capcheck(str_p, arg, (function (m) return m end)) -- I have to hack my way in
+            --if (match ~= nil) then FLESH:dispatch(match, nil, match.protocol.can.load) end
+            if authority_recipie then
+                return FLESH.make.Artifact(authority_recipie.state, "NegI_Artifact", "t") else
+                return FLESH.make.Error("expected String, got something else") end
+        end]], "Artifact can = can source call")
+        --FLESH.NegI.Manifests.Artifact.protocol.can["="].can["bytecode"].call = FLESH.make.Artifact([[return function (self, arg)
+        --    local str_p = FLESH.NegI.Manifests.String
+        --    local authority_recipie = FLESH:capcheck(str_p, arg, (function (m) return m end)) -- I have to hack my way in
+        --    --if (match ~= nil) then FLESH:dispatch(match, nil, match.protocol.can.load) end
+        --    if authority_recipie then
+        --        return FLESH.make.Artifact(authority_recipie.state, "NegI_Artifact", "b") else
+        --        return FLESH.make.Error("expected String, got something else") end
+        --end]], "Artifact can = can text call")
+        FLESH.NegI.Manifests.Artifact.state.can.reload.get = FLESH.make.Artifact([[return function (self)
             return FLESH.make.Artifact(self.state.chunk, self.state.chunkname, self.state.mode, self.state.env) end]], "Artifact can reload")
-        FLESH.NegI.Manifests.Artifact.state.can.introspect = FLESH.make.Artifact([[return function (self, arg) end]], "Artifact can intospect")
+        FLESH.NegI.Manifests.Artifact.state.can.introspect.get = FLESH.make.Artifact([[return function (self, arg) end]], "Artifact can intospect")
         FLESH.NegI.Manifests.Artifact.state.call = FLESH.make.Artifact([[return function(self, arg)
             print("what the fuck???")
             --ldbg(false)
@@ -759,7 +774,8 @@ return (function ()
             Error = FLESH.make.Manifest({ -- Error is always as valua
                 can = {
                     ["in"] = {call = capability_check},
-                    ["="] = {call = FLESH.make.Artifact([[return function (self, arg) end]])}
+                    ["="] = {call = FLESH.make.Artifact([[return function (self, arg)
+                    end]])}
                 }
             },{
                 can = {

@@ -52,6 +52,8 @@ pprint(labeling_test())
 pprint(swap_test())
 pprint(passing_test())
 print("NegI REPL v0.0.1 (Pre-Alpha)====================================")
+--print("-- for help write `REPL help`")
+--print("-- for tutorial write `REPL tutorial`")
 
 local running = true
 local rmf = OState.make.Manifest({ -- we describle REPL authority here, instead of using arbitrary commands
@@ -61,7 +63,10 @@ local rmf = OState.make.Manifest({ -- we describle REPL authority here, instead 
                 while self.state.repl_layer < FLESH.KES:get_context() do FLESH.KES:pop_layer() end
                 FLESH.KES:push_layer(FLESH.KES:get_context(),true)
             end]], "REPL can reset get")},
-            help = {get = OState.make.Artifact([[]])}
+            --tutorial = {get = OState.make.Artifact([[return function ()
+            --    print("")
+            --    print("to get a briefing of current context use ``")
+            --end]])}
         }
     },{
         repl_layer = OState.KES:get_context(),
