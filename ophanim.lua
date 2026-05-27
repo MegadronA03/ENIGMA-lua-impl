@@ -1097,7 +1097,25 @@ return (function ()
                     nodes = {get = FLESH.make.Artifact([[return function (self) end]])} -- get Frame with responsible manifests
                 },
                 call = FLESH.make.Artifact([[return function (self, arg) end]]) -- evaluate
-            })
+            }),
+            Petition = FLESH.make.Manifest({ -- external persistent resource request, could be a filepath or uri. not sure about the name: Exogen, Petition, Conduit, Vestige
+                ["in"] = {call = capability_check},
+                ["="] = {
+                    can = {
+                        filesys = {call = FLESH.make.Artifact([[return function (self, arg) end]])},
+                        env = {call = FLESH.make.Artifact([[return function (self, arg) end]])}
+                    },
+                    call = FLESH.make.Artifact([[return function (self, arg) end]])} -- should be created from query and expected protocol
+            },{
+                call = FLESH.make.Artifact([[return function (self, arg)
+                    
+                end]]) -- gives the resource during callback execution
+            }),
+            --Exogen = FLESH.make.Manifest({ -- interface for external resource (Device, File, Network and etc)
+            --    ["in"] = {call = capability_check},
+            --},{
+            --    drop = FLESH.make.Artifact([[return function (self) end]])
+            --})
 
              -- I need to understand how should I make it, so the user can modify the axioms it uses 
         }

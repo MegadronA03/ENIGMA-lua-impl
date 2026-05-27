@@ -1,6 +1,5 @@
 local pprint = require("pprint")
 local ophanim = require("ophanim")
-local ldbg = require("lua_utils/debugger")
 
 local OState = ophanim.newstate()
 --pprint(OState)
@@ -63,10 +62,35 @@ local rmf = OState.make.Manifest({ -- we describle REPL authority here, instead 
                 while self.state.repl_layer < FLESH.KES:get_context() do FLESH.KES:pop_layer() end
                 FLESH.KES:push_layer(FLESH.KES:get_context(),true)
             end]], "REPL can reset get")},
-            --tutorial = {get = OState.make.Artifact([[return function ()
-            --    print("")
-            --    print("to get a briefing of current context use ``")
-            --end]])}
+--            tutorial = {get = OState.NegI.parse([[
+--                Petition = env "console" (
+--                
+--                );
+--                cli write "
+--You sent drone inside some unknown possibly anomalous place.\n
+--The drone is your hands and eyes inside this place.\n
+--In your authority a terminal is available for the purpose of controlling and programming that drone on the fly.\n\n
+--
+--(press `enter` to continue)\n
+--";
+--                cli write "
+--First things first before doing anything, let's learn how to look around the environment.\n\n
+--
+--(write `context inner`)
+--";
+--                cli write "
+--As you can see you do not have an authority to do so.\n
+--Let's load relevant instruments and try again.\n\n
+--
+--(write `NegI load`)
+--";
+--                cli write "
+--Now let's lern how to use workspace\n.
+--
+--(write `NegI load`)
+--";
+--
+--            ]])}
         }
     },{
         repl_layer = OState.KES:get_context(),
