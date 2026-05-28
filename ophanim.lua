@@ -638,7 +638,7 @@ return (function ()
                     error_p.state, {desc = "Artifact: Failed to load "..chunkname.." due to host error: "..e})
                 else print("in ```lua\n"..chunk.."\n```"); error("FLESH.make.Artifact - Artifact construction failed on NegI sys init due to host error:"..tostring(e), 2) end
             end
-            ok, result = pcall(a)
+            local ok, result = pcall(a)
             local callable_result = (type(a) == "function") or (getmetatable(a).__call)
             if (not callable_result) then
                 if (not callable_result and ok) then result = "provided code is not callable!" end
