@@ -1720,14 +1720,8 @@ return (function ()
                     call = nil, -- not found appropriate Label in can, do it if there is negotiation
                     get = nil, -- not found appropriate Label in can, do it anyways with (if no call) or without negotioation. this rule exist to describle labels
                     ask = nil, -- default case for "can", can work with call but it's heavily advised to not use with call, otherwise it will cause confusion)
-                    wrap = { -- executes, when explicitly not asked for `get`. not sure how do I name this: `pass`, `proxy`, `wrap`
-                        enter = nil, -- `start` or `get` or `setup`, prepares environment and returns the proxied manifest in question
-                        exit = nil -- `end` or `clear`, revert changes it did at `start`
-                    },
-
                     get = nil, -- on start getting the stuff
-                    wrap = nil, -- wrapping up the site
-                    --handoff = nil, -- triggers on layer ownership transfer (I think I should leave that up to KES)
+                    wrap = nil -- wrapping up the site
 
                 },
                 state = { -- internal state of manifest, could only be used by protocol it's bundled with.
