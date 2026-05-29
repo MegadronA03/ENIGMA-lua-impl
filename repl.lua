@@ -62,7 +62,7 @@ local rmf = OState.make.Manifest({ -- we describle REPL authority here, instead 
                 while self.state.repl_layer < FLESH.KES:get_context() do FLESH.KES:pop_layer() end
                 FLESH.KES:push_layer(FLESH.KES:get_context(),true)
             end]], "REPL can reset get")},
---            tutorial = {get = OState.NegI.parse([[
+--            tutorial = {get = OState.NegI.parse([[ -- Petition is not finished, so it won't work, but that's how Manifest should look like if contructed from NegI side
 --                Petition = env "console" (
 --                
 --                );
