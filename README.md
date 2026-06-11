@@ -1,6 +1,6 @@
 # NegI 
 **Version:** 0.0.1 (PoC pre-alpha)
-**Implementation status:** Porting to Julia
+**Implementation status:** Porting to Janet
 
 <div align="center">
 <img src="logo.svg" width="256" height="256"/>
@@ -22,7 +22,7 @@ lua55 repl.lua
 3. Tokens should keep track of current evaluated data by having access to the Host device (like Artifacts do)
 
 # Some additional info
-This is a prototype, currently I'm rewriting it in Julia, because Lua have no multi-therading support and lacks proper file and hardware access (while I can add dependencies, people might find it difficult to install because of current lua ecosystem).
+This is a prototype, currently I'm rewriting it in Janet, because Lua have no multi-therading support and lacks proper file and hardware access (while I can add dependencies, people might find it difficult to install because of current lua ecosystem).
 
 - Practical NegI examples I use for tests located at `repl.lua` line 8.
 - To see how manifest are working and structured see `local manifest = {...` and `dispatch = function (`
@@ -32,3 +32,5 @@ This is a prototype, currently I'm rewriting it in Julia, because Lua have no mu
 You should read `s&dr.md` with a grain of salt, because I want to focus on implementation, rather than updating the docs (the code has most of the info inside comments, which I usually keep updated).
 
 `negi.lark` is an old file from python implementation attempt, it shows how in lark NegI syntax is parsed.
+
+P.S Currently the progress is on hold, because I'm busy with university
