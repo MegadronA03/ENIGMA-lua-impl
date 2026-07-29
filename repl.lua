@@ -7,15 +7,15 @@ OState.pprint = pprint
 
 local quote_test = function ()
     io.write("testing quoting (55):\t")
-    return OState:dispatch(OState.NegI.parse([[[a:1; b:{;a}; [a:55;b()][] ][] ]])).state
+    return OState:dispatch(OState.NegI.parse([[ [a:1; b:{;a}; [a:55;b()][] ][] ]])).state
 end
 local contain_test = function ()
     io.write("testing isolation (1):\t")
-    return OState:dispatch(OState.NegI.parse([[[a:1; b:{;a}; (a:55;b())[] ][] ]])).state
+    return OState:dispatch(OState.NegI.parse([[ [a:1; b:{;a}; (a:55;b())[] ][] ]])).state
 end
 local grounding_test = function ()
     io.write("testing grounding (1):\t")
-    return OState:dispatch(OState.NegI.parse([[[a:1; b:[;a]; [a:55;b()][] ][] ]])).state
+    return OState:dispatch(OState.NegI.parse([[ [a:1; b:[;a]; [a:55;b()][] ][] ]])).state
 end
 local labeling_test = function ()
     io.write("testing labeling (3):\t")

@@ -1,6 +1,6 @@
 # NegI 
-**Version:** 0.0.1 (PoC pre-alpha)
-**Implementation status:** Porting to Janet
+**Version:** 0.0.2 (PoC pre-alpha prototype)
+**Implementation status:** Porting to C + TCC
 
 <div align="center">
 <img src="logo.svg" width="256" height="256"/>

@@ -147,7 +147,7 @@ return (function ()
                         
                     --if (#self.relevance.dl > l.d) then
                         for d = #self.relevance.dl, l.d, -1 do -- exclude all layers between parent and new layer depths via depth
-                            l.h.r[#l.h.r+1] = self.relevance.dl[d] -- hide layers (we can ask depth form them directly)
+                            l.h.r[#l.h.r+1] = self.relevance.dl[d] -- hide layers (we can ask depth from them directly)
                             bimap_write(self.relevance, "dl", d, nil) -- removing irrelevant layers
                             if self.isolations["do"][d] then -- check if there is isolation
                                 l.h.i[#l.h.i+1] = d -- hide isolations (we can ask depth form them directly)
@@ -361,7 +361,7 @@ return (function ()
                 end
                 --binding_label_get = function (self, b) return self.labels.bl[b] end, -- Used by Frame to make label list. probably pe replaced by 'pop_layer' Frame return
             },
-            ESC = { -- Escapee Search Container
+            ESC = { -- EScapee Continuation
                 closure = nil,
                 start = function(self, err_handler, fn, ...) -- I need to reference KES. the KES on it's own is already big enough, I'm not sure it belongs there, but I'm sure it should do layer unwinding
                     local lid = FLESH.KES:get_context()
@@ -422,7 +422,7 @@ return (function ()
                                 return result
                             else
                                 --print("get.")
-                                if self:intentcheck(self.NegI.Manifests.Artifact.state, fabk.protocol) then -- we need TCO for performance reasons
+                                if self:intentcheck(self.NegI.Manifests.Artifact.state, fabk.protocol) then
                                     return fabk.state.artifact(fabk, rterm) else
                                     return self:dispatch(fabk, rterm) end
                             end
@@ -435,7 +435,7 @@ return (function ()
                         --    self:do_action(protocol.wrap, lterm) -- wrapping up
                         --    return fabk
                         --end
-                        return self:do_action(protocol.get, lterm) -- we need TCO for performance reasons
+                        return self:do_action(protocol.get, lterm)
                     else return lterm end
                 elseif rterm then return self.make.Error("OPHANIM: FLESH:dispatch Error: missing protocol")
                 else return lterm end
@@ -744,8 +744,6 @@ return (function ()
                         return FLESH:dispatch(self.state, arg)
                     end)
                 end]], "Breaker transfer"), -- not sure about clause
-            ThePasser = FLESH.make.Artifact("return function (self, arg) return arg end", "ThePasser call"),
-            ProviderOfThePasser = FLESH.make.Artifact("return function (self) return FLESH.NegI.Assets.ThePasser end", "ProviderOfThePasser call"),
         }
 
         FLESH.NegI.Intrinsics = { -- shared code between Manifests for optimization reasons, because these are tightly coupled anyways
@@ -918,11 +916,13 @@ return (function ()
                     ["="] = {call = FLESH.make.Artifact([[return function (self, arg) end]])}
                 }},{
                     can = {
-                        [":"] = {get = FLESH.make.Artifact([[return function (self)
-                            FLESH.KES:stage_alias(self.state.name)
-                            --ldbg()
-                            return FLESH.NegI.Assets.ThePasser end
-                            --return FLESH.make.Manifest({ get = FLESH.NegI.Assets.ProviderOfThePasser},{}) end]])},
+                        [":"] = {
+                            get = FLESH.make.Artifact([[return function (self)
+                                FLESH.KES:stage_alias(self.state.name)
+                                return FLESH.NegI.Manifests.gap end]]),
+                            call = FLESH.make.Artifact([[return function (self, arg)
+                                FLESH.KES:stage_alias(self.state.name)
+                                return arg end]])},
                         ["name"] = {get = FLESH.make.Artifact([[return function (self)
                             return FLESH.make.String(self.state.name)
                         end]])},
